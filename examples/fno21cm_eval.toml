@@ -1,0 +1,38 @@
+# Evaluate one or more fno-21cm runs on their own test split.
+#
+#   cm21eval run --config examples/fno21cm_eval.toml
+#
+# Adjust the paths; everything else is a working default.
+
+[run]
+data = "/work/data/compressed/cubes_3d.h5"
+out = "results/fno21cm"
+split = "test"
+limit = 200
+target = "xhi"
+density = "density"
+fno_root = "/work/fno-21cm"
+
+[models]
+fno = "fno21cm:/work/fno-21cm/checkpoints/3d_xhi/fno/ckpts/best_model_state_dict.pt"
+ufno = "fno21cm:/work/fno-21cm/checkpoints/3d_xhi/ufno/ckpts/best_model_state_dict.pt"
+
+[settings]
+box_mpc = 200.0
+threshold = 0.5
+stage_edges = [0.02, 0.2, 0.4, 0.6, 0.8, 0.98]
+active_range = [0.05, 0.95]
+n_k_bins = 15
+rays_per_slice = 256
+slices_per_stage = 6
+warmup = 3
+iters = 10
+
+[metrics]
+enabled = [
+  "voxel", "edge", "spectrum", "bubble", "morphology",
+  "history", "observable", "eft", "front", "efficiency",
+]
+
+[metric_options.spectrum]
+n_k_bins = 20
