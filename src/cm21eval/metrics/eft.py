@@ -11,6 +11,12 @@ Per stage, ``T`` is fitted as ``b_1 + b_{k2} k^2`` and ``P_eps`` as
 coefficients are compared cone by cone and the difference is scaled by the
 truth fit's error.
 
+The normalisation follows ``fno-21cm`` exactly: ``n_modes = N_modes *
+n_slices``, ``n_independent = n_modes / 2``, ``P_eps`` is a per-mode power,
+non-positive ``P_eps`` bins are dropped, and the fit variances are
+``P_eps / (n_independent P_dd)`` for the transfer function and
+``2 P_eps^2 / n_independent`` for the stochastic term.
+
 Interpretation: a conditional-mean (MSE-trained) emulator usually reproduces
 T(k) but under-predicts P_eps -- it produces the mean field given the density
 and drops the part of x_HI that the density does not determine. That is a
@@ -26,7 +32,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..physics import KBinner, fit_even_polynomial, safe_ratio, stage_labels, stage_masks
+from ..physics import (KBinner, fit_even_polynomial, stage_labels,
+                       stage_masks)
 from ..registry import register
 from .base import Metric, nanmedian
 
@@ -57,12 +64,13 @@ class EftMetrics(Metric):
         u_p = pred - pred.mean(axis=(0, 1), keepdims=True)
         delta = density - density.mean(axis=(0, 1), keepdims=True)
 
-        dd = binner.slice_sums(delta)
-        td = binner.cross_sums(u_t, delta)
-        pd = binner.cross_sums(u_p, delta)
-        tt = binner.slice_sums(u_t)
-        pp = binner.slice_sums(u_p)
-
+        sums = {
+            "dd": binner.slice_sums(delta),
+            "td": binner.cross_sums(u_t, delta),
+            "pd": binner.cross_sums(u_p, delta),
+            "tt": binner.slice_sums(u_t),
+            "pp": binner.slice_sums(u_p),
+        }
         masks = stage_masks(
             truth.mean(axis=(0, 1)),
             self.settings.stage_edges,
@@ -71,56 +79,116 @@ class EftMetrics(Metric):
         stages = []
         for mask in masks:
             n = int(mask.sum())
-            if n == 0:
+            if n < self.settings.min_stage_slices:
                 stages.append(None)
                 continue
-            sums = {name: arr[mask].sum(axis=0) for name, arr in
-                    (("dd", dd), ("td", td), ("pd", pd), ("tt", tt), ("pp", pp))}
-            stages.append(self._fit_stage(sums, binner.counts))
+            stage_sums = {name: array[mask].sum(axis=0)
+                          for name, array in sums.items()}
+            stages.append(self._fit_stage(stage_sums, binner.counts, n))
         self.rows.append({"sample": sample.id, "stages": stages})
 
-    def _fit_stage(self, sums, counts) -> dict:
+    def _fit_stage(self, sums, counts, n_slices: int) -> dict:
         k = self._binner[1].centers
-        valid = counts > 0
+        n_modes = counts * n_slices
+        n_independent = n_modes / 2.0
+        valid = (n_modes > 0) & (sums["dd"] > 0)
         with np.errstate(invalid="ignore", divide="ignore"):
-            p_dd = np.where(valid, sums["dd"] / counts, np.nan)
+            p_dd = np.where(valid, sums["dd"] / n_modes, np.nan)
             t_truth = np.where(valid, sums["td"] / sums["dd"], np.nan)
             t_pred = np.where(valid, sums["pd"] / sums["dd"], np.nan)
             eps_truth = np.where(
-                valid, (sums["tt"] - sums["td"] ** 2 / sums["dd"]) / counts, np.nan)
+                valid, (sums["tt"] - sums["td"] ** 2 / sums["dd"]) / n_modes,
+                np.nan)
             eps_pred = np.where(
-                valid, (sums["pp"] - sums["pd"] ** 2 / sums["dd"]) / counts, np.nan)
-            _, r_truth = safe_ratio(sums["tt"], sums["dd"], sums["td"])
-            _, r_pred = safe_ratio(sums["pp"], sums["dd"], sums["pd"])
-            var_t = (2.0 / np.maximum(counts, 1)) * np.abs(t_truth) ** 2
-            var_e = (2.0 / np.maximum(counts, 1)) * np.abs(eps_truth) ** 2
+                valid, (sums["pp"] - sums["pd"] ** 2 / sums["dd"]) / n_modes,
+                np.nan)
+            # The reference drops non-positive stochastic power before fitting.
+            eps_truth = np.where(eps_truth > 0, eps_truth, np.nan)
+            eps_pred = np.where(eps_pred > 0, eps_pred, np.nan)
+            r_truth = np.where(
+                valid & (sums["tt"] > 0),
+                sums["td"] / np.sqrt(sums["tt"] * sums["dd"]), np.nan)
+            r_pred = np.where(
+                valid & (sums["pp"] > 0),
+                sums["pd"] / np.sqrt(sums["pp"] * sums["dd"]), np.nan)
+            var_t_truth = eps_truth / (n_independent * p_dd)
+            var_t_pred = eps_pred / (n_independent * p_dd)
+            var_e_truth = 2.0 * eps_truth ** 2 / n_independent
+            var_e_pred = 2.0 * eps_pred ** 2 / n_independent
 
-        fit_t = fit_even_polynomial(k, t_truth, var_t, self.settings.eft_k_max, 2)
-        fit_p = fit_even_polynomial(k, t_pred, var_t, self.settings.eft_k_max, 2)
-        fit_et = fit_even_polynomial(k, eps_truth, var_e, self.settings.eft_k_max, 2)
-        fit_ep = fit_even_polynomial(k, eps_pred, var_e, self.settings.eft_k_max, 2)
-        target_index = [int(np.argmin(np.abs(np.log(k) - np.log(target))))
-                        for target in self.settings.k_targets]
+        fit_t = fit_even_polynomial(k, t_truth, var_t_truth,
+                                    self.settings.eft_k_max, 2)
+        fit_p = fit_even_polynomial(k, t_pred, var_t_pred,
+                                    self.settings.eft_k_max, 2)
+        fit_et = fit_even_polynomial(k, eps_truth, var_e_truth,
+                                     self.settings.eft_k_max, 2)
+        fit_ep = fit_even_polynomial(k, eps_pred, var_e_pred,
+                                     self.settings.eft_k_max, 2)
+        targets = self._target_index()
         return {
             "k": k,
             "transfer_truth": t_truth,
             "transfer_pred": t_pred,
             "eps_truth": eps_truth,
             "eps_pred": eps_pred,
+            "r_truth": r_truth,
+            "r_pred": r_pred,
             "transfer_fit_truth": fit_t,
             "transfer_fit_pred": fit_p,
             "eps_fit_truth": fit_et,
             "eps_fit_pred": fit_ep,
-            "r_truth": r_truth,
-            "r_pred": r_pred,
-            "transfer_at_k": [t_truth[i] for i in target_index],
-            "transfer_pred_at_k": [t_pred[i] for i in target_index],
+            "transfer_at_k": [t_truth[i] for i in targets],
+            "transfer_pred_at_k": [t_pred[i] for i in targets],
+            "r_at_k": [r_truth[i] for i in targets],
+            "r_pred_at_k": [r_pred[i] for i in targets],
         }
+
+    def _target_index(self):
+        k = self._binner[1].centers
+        return [int(np.argmin(np.abs(np.log(k) - np.log(target))))
+                for target in self.settings.k_targets]
+
+    def _stage_values(self, j, key):
+        values = []
+        for row in self.rows:
+            stage = row["stages"][j]
+            if stage is not None:
+                values.append(stage[key])
+        return values
+
+    def _coef(self, j, key, term):
+        values = [v["coef"][term] for v in self._stage_values(j, key)
+                  if np.isfinite(v["coef"][term])]
+        return float(np.median(values)) if values else float("nan")
+
+    def _sigma(self, j, key, term):
+        values = [v["sigma"][term] for v in self._stage_values(j, key)
+                  if np.isfinite(v["sigma"][term])]
+        return float(np.median(values)) if values else float("nan")
+
+    def _ratio(self, j, target_index):
+        t = self._stage_values(j, "transfer_at_k")
+        p = self._stage_values(j, "transfer_pred_at_k")
+        if not t:
+            return float("nan")
+        with np.errstate(invalid="ignore", divide="ignore"):
+            values = [float(p[i][target_index]) / float(t[i][target_index])
+                      for i in range(len(t))]
+        return nanmedian(values)
+
+    def _median_at_k(self, j, key, target_index):
+        values = []
+        for stage in self._stage_values(j, key):
+            value = float(stage[target_index])
+            if np.isfinite(value):
+                values.append(value)
+        return float(np.median(values)) if values else float("nan")
 
     def result(self):
         if not self.rows:
             return {}
-        labels = stage_labels(self.settings.stage_edges, self.settings.active_range)
+        labels = stage_labels(self.settings.stage_edges,
+                              self.settings.active_range)
         targets = self._target_index()
         k = self._binner[1].centers
 
@@ -146,6 +214,10 @@ class EftMetrics(Metric):
                 "eps0_ratio": _f(e0_p / e0_t) if e0_t else None,
                 "transfer_ratio": [_f(self._ratio(j, t))
                                    for t in range(len(targets))],
+                "r_ud_truth": _f(self._median_at_k(j, "r_at_k",
+                                                   len(targets) // 2)),
+                "r_ud_pred": _f(self._median_at_k(j, "r_pred_at_k",
+                                                  len(targets) // 2)),
                 "k_targets": [float(k[i]) for i in targets],
             })
         active = stages[-1]
@@ -158,50 +230,23 @@ class EftMetrics(Metric):
                 "b1_delta_sigma": active["b1_delta_sigma"],
                 "eps0_ratio": active["eps0_ratio"],
                 "transfer_ratio": active["transfer_ratio"],
+                "r_ud_truth": active["r_ud_truth"],
+                "r_ud_pred": active["r_ud_pred"],
             },
             "n_samples": len(self.rows),
         }
-
-    def _target_index(self):
-        k = self._binner[1].centers
-        return [int(np.argmin(np.abs(np.log(k) - np.log(target))))
-                for target in self.settings.k_targets]
-
-    def _stage_values(self, j, key):
-        values = []
-        for row in self.rows:
-            stage = row["stages"][j]
-            if stage is not None:
-                values.append(stage[key])
-        return values
-
-    def _coef(self, j, key, term):
-        values = [v["coef"][term] for v in self._stage_values(j, key) if np.isfinite(v["coef"][term])]
-        return float(np.median(values)) if values else float("nan")
-
-    def _sigma(self, j, key, term):
-        values = [v["sigma"][term] for v in self._stage_values(j, key) if np.isfinite(v["sigma"][term])]
-        return float(np.median(values)) if values else float("nan")
-
-    def _ratio(self, j, target_index):
-        t = self._stage_values(j, "transfer_at_k")
-        p = self._stage_values(j, "transfer_pred_at_k")
-        if not t:
-            return float("nan")
-        with np.errstate(invalid="ignore", divide="ignore"):
-            values = [float(p[i][target_index]) / float(t[i][target_index])
-                      for i in range(len(t))]
-        return nanmedian(values)
 
     def arrays(self):
         if not self.rows:
             return {}
         k = self._binner[1].centers
         out = {"eft_k": k}
-        labels = stage_labels(self.settings.stage_edges, self.settings.active_range)
+        labels = stage_labels(self.settings.stage_edges,
+                              self.settings.active_range)
         for j, label in enumerate(labels):
             token = label.replace(" ", "_").replace("-", "_").replace(".", "p")
-            for key in ("transfer_truth", "transfer_pred", "eps_truth", "eps_pred"):
+            for key in ("transfer_truth", "transfer_pred", "eps_truth",
+                        "eps_pred", "r_truth", "r_pred"):
                 rows = [row["stages"][j][key] for row in self.rows
                         if row["stages"][j] is not None]
                 if rows:

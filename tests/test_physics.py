@@ -113,12 +113,12 @@ def test_mfp_distribution_mean_half_plane():
     assert 20 < result["distances_mpc"].mean() < 35
 
 
-def test_neutral_region_summary_single_sphere():
-    field = np.zeros((40, 40, 40))
+def test_ionized_region_summary_single_sphere():
+    field = np.ones((40, 40, 40))
     x, y, z = np.indices(field.shape)
     radius = 5.0
-    field[(x - 20) ** 2 + (y - 20) ** 2 + (z - 20) ** 2 <= radius ** 2] = 1.0
-    summary = physics.neutral_region_summary(field, threshold=0.5)
+    field[(x - 20) ** 2 + (y - 20) ** 2 + (z - 20) ** 2 <= radius ** 2] = 0.0
+    summary = physics.ionized_region_summary(field, threshold=0.5)
     assert summary["count"] == 1
     assert summary["mean_effective_radius_cells"] == pytest.approx(
         radius * (3 / 4) ** (1 / 3), rel=0.15)

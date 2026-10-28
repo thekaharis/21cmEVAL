@@ -8,9 +8,10 @@ side), then reports
 
 * RMSE and gradient RMS versus distance -- confirms whether error is
   front-dominated;
-* band RMSE within ``front_bands_mpc`` of the front;
-* the 10-90 transition width of the mean x_HI profile, truth and prediction:
-  a blurrier front gives a larger width;
+* per-cone band L2, H1 and error fraction within ``front_bands_mpc`` of the
+  front, averaged over samples;
+* the 10-90 transition width of the pooled mean x_HI profile, truth and
+  prediction: a blurrier front gives a larger width;
 * saturated-region RMSE, where the truth is already 0 or 1.
 
 Distances use physical transverse sampling (Mpc), so anisotropic cells are
@@ -25,7 +26,7 @@ import numpy as np
 
 from ..physics import front_width, signed_distance_2d
 from ..registry import register
-from .base import Metric, nanmedian
+from .base import Metric
 
 
 @register("front")
@@ -43,20 +44,34 @@ class FrontMetrics(Metric):
         self.sum_truth = np.zeros(n)
         self.sum_pred = np.zeros(n)
         self.band_ss = {band: 0.0 for band in settings.front_bands_mpc}
+        self.band_grad = {band: 0.0 for band in settings.front_bands_mpc}
         self.band_n = {band: 0 for band in settings.front_bands_mpc}
+        self.total_sq_err = 0.0
         self.saturated_ss = 0.0
         self.saturated_n = 0
+        self.neutral_pred = 0.0
+        self.neutral_n = 0
+        self.ionized_pred = 0.0
+        self.ionized_n = 0
+        self.per_sample: list[dict] = []
         self.widths: list[dict] = []
+        self.skipped = 0
 
     def update(self, sample, prediction, aux=None, runtime=None):
         truth = self.target(sample)
         pred = self.prediction(prediction)
+        if truth.shape[0] < 2 or truth.shape[1] < 2:
+            self.skipped += 1
+            return
         box = self.box_mpc(sample)
         dx = box / truth.shape[0]
         dy = box / truth.shape[1]
         sampling = (dx, dy)
         error = pred - truth
         edges = self.edges
+        sample_band = {}
+        sample_total_sq = 0.0
+        sample_n_front = 0
 
         for k in range(truth.shape[2]):
             t_slice = truth[:, :, k]
@@ -81,20 +96,45 @@ class FrontMetrics(Metric):
             self.sum_truth += np.bincount(
                 index, weights=t_slice.ravel()[valid], minlength=len(self.centers))
             self.sum_pred += np.bincount(
-                index, weights=pred[:, :, k].ravel()[valid], minlength=len(self.centers))
+                index, weights=pred[:, :, k].ravel()[valid],
+                minlength=len(self.centers))
 
             absolute = np.abs(distance.ravel()[valid])
+            sample_total_sq += float(squared.sum())
+            sample_n_front += int(valid.sum())
             for band in self.band_ss:
                 # A coarse grid cannot resolve a band thinner than one cell;
                 # fall back to the first cell shell instead of reporting NaN.
                 select = absolute <= max(band, dx, dy)
                 self.band_ss[band] += float(squared[select].sum())
+                self.band_grad[band] += float(grad[select].sum())
                 self.band_n[band] += int(select.sum())
+                sample_band.setdefault(band, [0.0, 0.0, 0])
+                sample_band[band][0] += float(squared[select].sum())
+                sample_band[band][1] += float(grad[select].sum())
+                sample_band[band][2] += int(select.sum())
 
-            saturated = (t_slice <= 1e-3) | (t_slice >= 1 - 1e-3)
+            neutral = t_slice >= 1 - 1e-3
+            ionized = t_slice <= 1e-3
+            if neutral.any():
+                self.neutral_pred += float(np.sum(pred[:, :, k][neutral]))
+                self.neutral_n += int(neutral.sum())
+            if ionized.any():
+                self.ionized_pred += float(np.sum(pred[:, :, k][ionized]))
+                self.ionized_n += int(ionized.sum())
+            saturated = neutral | ionized
             if saturated.any():
                 self.saturated_ss += float(np.sum(error[:, :, k][saturated] ** 2))
                 self.saturated_n += int(saturated.sum())
+
+        self.total_sq_err += sample_total_sq
+        record = {"n_front_vox": sample_n_front}
+        for band, (ss, gs, n) in sample_band.items():
+            record[f"L2_band{band:g}"] = np.sqrt(ss / n) if n else np.nan
+            record[f"H1_band{band:g}"] = np.sqrt(gs / n) if n else np.nan
+            record[f"errfrac_band{band:g}"] = (
+                ss / sample_total_sq if sample_total_sq > 0 else np.nan)
+        self.per_sample.append(record)
 
         profile = self._profile()
         if profile is not None:
@@ -119,13 +159,26 @@ class FrontMetrics(Metric):
         with np.errstate(invalid="ignore", divide="ignore"):
             mean_sq = np.where(self.n > 0, self.sum_sq / self.n, np.nan)
             grad_rms = np.where(self.n > 0, np.sqrt(self.sum_grad / self.n), np.nan)
-        width_truth = nanmedian([w["truth"] for w in self.widths]) if self.widths else np.nan
-        width_pred = nanmedian([w["pred"] for w in self.widths]) if self.widths else np.nan
+        width_truth = front_width(profile["d"], profile["truth"])
+        width_pred = front_width(profile["d"], profile["pred"])
+        per_sample_truth = _nanmedian([w["truth"] for w in self.widths])
+        per_sample_pred = _nanmedian([w["pred"] for w in self.widths])
         bands = {}
         for band in self.band_ss:
-            rmse = (np.sqrt(self.band_ss[band] / self.band_n[band])
-                    if self.band_n[band] else np.nan)
-            bands[f"rmse_within_{band:g}mpc"] = _f(rmse)
+            n = self.band_n[band]
+            l2 = np.sqrt(self.band_ss[band] / n) if n else np.nan
+            h1 = np.sqrt(self.band_grad[band] / n) if n else np.nan
+            errfrac = (self.band_ss[band] / self.total_sq_err
+                       if self.total_sq_err > 0 else np.nan)
+            per_sample = [r.get(f"L2_band{band:g}", np.nan)
+                          for r in self.per_sample]
+            bands[f"rmse_within_{band:g}mpc"] = _f(l2)
+            bands[f"h1_within_{band:g}mpc"] = _f(h1)
+            bands[f"errfrac_within_{band:g}mpc"] = _f(errfrac)
+            bands[f"rmse_within_{band:g}mpc_mean"] = _f(_nanmean(per_sample))
+        status = ("ok" if np.isfinite(width_truth) and np.isfinite(width_pred)
+                  else "unresolved: the mean profile does not span 0.1-0.9 "
+                       "inside the distance window")
         return {
             "d_centers_mpc": self.centers,
             "mean_truth": profile["truth"],
@@ -134,12 +187,22 @@ class FrontMetrics(Metric):
             "gradient_rms_profile": grad_rms,
             "front_width_truth_mpc": _f(width_truth),
             "front_width_pred_mpc": _f(width_pred),
-            "front_width_excess_mpc": _f(width_pred - width_truth),
+            "front_width_excess_mpc": (_f(width_pred - width_truth)
+                                       if np.isfinite(width_pred)
+                                       and np.isfinite(width_truth) else None),
+            "front_width_per_sample_truth_mpc": _f(per_sample_truth),
+            "front_width_per_sample_pred_mpc": _f(per_sample_pred),
+            "front_width_status": status,
             "saturated_rmse": _f(
                 np.sqrt(self.saturated_ss / self.saturated_n)
                 if self.saturated_n else np.nan),
+            "pred_where_truth_neutral_mean": _f(
+                self.neutral_pred / self.neutral_n if self.neutral_n else np.nan),
+            "pred_where_truth_ionized_mean": _f(
+                self.ionized_pred / self.ionized_n if self.ionized_n else np.nan),
             "bands": bands,
             "n_samples": len(self.widths),
+            "skipped_samples": self.skipped,
         }
 
     def arrays(self):
@@ -154,7 +217,23 @@ class FrontMetrics(Metric):
             "front_rmse": rmse,
             "front_gradient_rms": grad,
             "front_counts": self.n,
+            "front_width_truth": np.asarray([w["truth"] for w in self.widths]),
+            "front_width_pred": np.asarray([w["pred"] for w in self.widths]),
         }
+
+
+def _nanmedian(values):
+    values = np.asarray(values, dtype=np.float64)
+    if values.size == 0 or not np.isfinite(values).any():
+        return float("nan")
+    return float(np.nanmedian(values))
+
+
+def _nanmean(values):
+    values = np.asarray(values, dtype=np.float64)
+    if values.size == 0 or not np.isfinite(values).any():
+        return float("nan")
+    return float(np.nanmean(values))
 
 
 def _f(value):

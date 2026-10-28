@@ -43,13 +43,27 @@ def test_command_adapter(tmp_path, sample):
     script.write_text(
         "import sys, numpy as np\n"
         "data = np.load(sys.argv[1])\n"
-        "xhi = np.full_like(data['xhi'], 0.25)\n"
+        "assert 'xhi' not in data.files, data.files\n"
+        "xhi = np.full_like(data['density'], 0.25)\n"
         "np.savez(sys.argv[2], xhi=xhi)\n"
     )
     adapter = CommandModelAdapter(
         f"{sys.executable} {script} {{input}} {{output}}")
     prediction = adapter.predict(sample)
     assert np.allclose(prediction["xhi"], 0.25)
+
+
+def test_command_adapter_does_not_leak_targets(tmp_path, sample):
+    script = tmp_path / "copy.py"
+    script.write_text(
+        "import sys, numpy as np\n"
+        "data = np.load(sys.argv[1])\n"
+        "np.savez(sys.argv[2], xhi=data['density'] * 0 + 0.5)\n"
+    )
+    adapter = CommandModelAdapter(
+        f"{sys.executable} {script} {{input}} {{output}}")
+    prediction = adapter.predict(sample)
+    assert np.allclose(prediction["xhi"], 0.5)
 
 
 def test_command_adapter_reports_failure(tmp_path, sample):
@@ -83,3 +97,15 @@ def test_torch_adapter(sample):
     prediction = adapter.predict(sample)
     assert prediction["xhi"].shape == sample.targets["xhi"].shape
     assert adapter.describe()["parameters"] == 0
+
+    stats = adapter.benchmark([sample], warmup=1, iters=3)
+    assert len(stats["seconds"]) == 3
+    assert stats["slices"] == sample.shape[2]
+
+    from cm21eval.runner import evaluate
+    from cm21eval.settings import Settings
+
+    result = evaluate(adapter, SyntheticDataset(n_samples=1, shape=(12, 12, 6)),
+                      Settings(box_mpc=100.0, warmup=1, iters=2),
+                      ["efficiency"])
+    assert result.metrics["efficiency"]["timing"] == "forward_only"

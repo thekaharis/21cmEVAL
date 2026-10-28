@@ -31,6 +31,7 @@ class AnisotropyMetrics(Metric):
         super().__init__(settings, options)
         self.chunk_z = tuple(options.get("chunk_z_centers", (7.0, 9.0, 11.0)))
         self.chunk_cells = int(options.get("chunk_cells", 32))
+        self.min_truth_std = float(options.get("min_truth_std", 1e-3))
         self.rows: list[dict] = []
         self._binner = None
         self._kperp = None
@@ -59,6 +60,7 @@ class AnisotropyMetrics(Metric):
             return
         box = self.box_mpc(sample)
         binner = self._bins(nx, ny, box)
+        slice_std = truth.std(axis=(0, 1))
         maps = []
         for target_z in self.chunk_z:
             index = int(np.argmin(np.abs(z - target_z)))
@@ -82,7 +84,9 @@ class AnisotropyMetrics(Metric):
             pp = self._bin(fp, binner)
             cross = self._bin_cross(ft, fp, binner)
             maps.append({"z": float(z[start:stop].mean()), "kpar": kpar,
-                         "pt": pt, "pp": pp, "cross": cross})
+                         "pt": pt, "pp": pp, "cross": cross,
+                         "ok": bool(slice_std[start:stop].mean()
+                                    > self.min_truth_std)})
         self.rows.append({"sample": sample.id, "maps": maps})
 
     @staticmethod
@@ -111,6 +115,8 @@ class AnisotropyMetrics(Metric):
                 if c >= len(row["maps"]):
                     continue
                 record = row["maps"][c]
+                if not record["ok"]:
+                    continue
                 z_label = record["z"]
                 kpar = record["kpar"]
                 ratio, coherence = safe_ratio(
@@ -171,6 +177,8 @@ class AnisotropyMetrics(Metric):
                 if c >= len(row["maps"]):
                     continue
                 record = row["maps"][c]
+                if not record["ok"]:
+                    continue
                 z_label = record["z"]
                 kpar = record["kpar"]
                 ratio, _ = safe_ratio(record["pt"], record["pp"],

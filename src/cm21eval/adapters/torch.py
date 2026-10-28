@@ -76,14 +76,17 @@ class TorchModelAdapter(BaseAdapter):
             tensor = tensor.half()
         return tensor.to(self.device)
 
+    def _forward(self, x):
+        try:
+            return self.module(x=x)
+        except TypeError:
+            return self.module(x)
+
     def predict(self, sample: Sample) -> dict:
         torch = self.torch
         x = self._stack(sample)
         with torch.no_grad():
-            try:
-                output = self.module(x=x)
-            except TypeError:
-                output = self.module(x)
+            output = self._forward(x)
         if isinstance(output, dict):
             output = (output[self.output_field] if self.output_field in output
                       else next(iter(output.values())))
@@ -102,6 +105,39 @@ class TorchModelAdapter(BaseAdapter):
         if array.ndim != 3:
             raise ValueError(f"adapter output must reduce to 3-D, got {array.shape}")
         return {self.output_field: array}
+
+    def benchmark(self, samples, warmup: int = 3, iters: int = 10) -> dict:
+        """Time forward passes with inputs already on the device.
+
+        Mirrors ``fno-21cm/viz/inference_speed_eval.py``: host-to-device
+        transfer is excluded, CUDA is synchronised around each timed call and
+        warmup iterations are discarded.
+        """
+        import time
+
+        torch = self.torch
+        tensors = [self._stack(sample) for sample in samples]
+        with torch.no_grad():
+            for index in range(max(0, warmup)):
+                self._forward(tensors[index % len(tensors)])
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+            times = []
+            for index in range(max(1, iters)):
+                x = tensors[index % len(tensors)]
+                if self.device.type == "cuda":
+                    torch.cuda.synchronize()
+                start = time.perf_counter()
+                self._forward(x)
+                if self.device.type == "cuda":
+                    torch.cuda.synchronize()
+                times.append(time.perf_counter() - start)
+        peak = (torch.cuda.max_memory_allocated()
+                if self.device.type == "cuda" else None)
+        return {"seconds": times, "peak_bytes": peak,
+                "slices": int(tensors[0].shape[-1]),
+                "n_timed": len(times)}
 
     def describe(self) -> dict:
         info = super().describe()

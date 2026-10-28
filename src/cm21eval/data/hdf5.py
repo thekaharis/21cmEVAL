@@ -6,11 +6,15 @@ Auto-detects the two layouts that occur in practice:
 * analysis layout -- ``density`` and ``neutral_fraction`` (N, Nx, Ny, Nz),
   plus ``cone_id``, ``target_z`` and ``params``.
 
-Every key can be overridden from the CLI for other files. Input channels
-beyond density are not reconstructed from ``x``: the whole stack is exposed
-as an input named ``x``, which the torch adapter accepts directly. The
-density cube is also exposed separately when the file stores it, so the
-physics metrics work on both layouts.
+An HDF5 cache does not declare train/val/test splits. ``Sample.split`` is
+``None`` unless an explicit ``split_map`` is supplied, and the dataset refuses
+a ``--split`` filter rather than silently treating every row as test. For a
+real evaluation select rows with ``--indices`` or with the checkpoint's own
+``--indices-json`` (which prefers ``test_cone_ids``).
+
+The whole channel stack is exposed as ``x`` for the torch/fno-21cm adapters;
+the density cube is exposed separately so the physics metrics work on both
+layouts.
 """
 from __future__ import annotations
 
@@ -28,6 +32,8 @@ LIGHTCONE_PARAM_NAMES = (
     "M_TURN", "t_STAR", "X_RAY_SPEC_INDEX", "OMm", "SIGMA_8",
 )
 
+_XHI_ALIASES = ("y", "neutral_fraction", "xhi")
+
 
 class Hdf5Dataset(BaseDataset):
     def __init__(self, path, split: str | None = None, limit: int | None = None,
@@ -36,7 +42,8 @@ class Hdf5Dataset(BaseDataset):
                  z_key: str = "target_z", params_key: str = "params",
                  id_key: str | None = "cone_id", box_mpc: float | None = None,
                  default_omega_m: float | None = None,
-                 indices: list[int] | None = None):
+                 indices: list[int] | None = None,
+                 split_map: dict[str, list[int]] | None = None):
         super().__init__(split=split, limit=limit, indices=indices)
         self.path = Path(path).expanduser().resolve()
         if not self.path.exists():
@@ -50,42 +57,50 @@ class Hdf5Dataset(BaseDataset):
         self.id_key = id_key
         self.box_mpc = box_mpc
         self.default_omega_m = default_omega_m
+        self.split_map = split_map
+        self.cone_ids: list[str] = []
         self._loaded: list[Sample] | None = None
 
-    def _keys(self, handle) -> tuple[str | None, str | None]:
+    # ------------------------------------------------------------------ keys
+    def _target_key(self, handle) -> str | None:
         keys = set(handle.keys())
-        x_key = self.x_key or ("x" if "x" in keys else None)
         if self.y_key:
-            y_key = self.y_key
-        elif "y" in keys:
-            y_key = "y"
-        elif "neutral_fraction" in keys:
-            y_key = "neutral_fraction"
-        elif self.target in keys:
-            y_key = self.target
-        else:
-            y_key = None
-        return x_key, y_key
+            return self.y_key
+        if self.target == "xhi":
+            for key in _XHI_ALIASES:
+                if key in keys:
+                    return key
+            return None
+        return self.target if self.target in keys else None
 
+    # ------------------------------------------------------------------ load
     def _samples(self) -> list[Sample]:
         if self._loaded is None:
             self._loaded = self._load()
         return self._loaded
 
+    @staticmethod
+    def _decode(value) -> str:
+        return value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
+
     def _load(self) -> list[Sample]:
         import h5py
 
         with h5py.File(self.path, "r") as handle:
-            x_key, y_key = self._keys(handle)
+            y_key = self._target_key(handle)
             if y_key is None:
                 raise KeyError(
-                    f"{self.path} has neither 'y' nor 'neutral_fraction' nor "
-                    f"target {self.target!r}; keys: {sorted(handle.keys())}")
+                    f"{self.path} has no target field for {self.target!r}; "
+                    f"keys: {sorted(handle.keys())}. Pass y_key explicitly.")
             target = handle[y_key]
             n = target.shape[0]
+            x_key = self.x_key or ("x" if "x" in handle else None)
             x = handle[x_key] if x_key else None
             density = handle[self.density] if self.density in handle else None
             z = np.asarray(handle[self.z_key]) if self.z_key in handle else None
+            box = self.box_mpc
+            if box is None and "box_mpc" in handle:
+                box = float(np.asarray(handle["box_mpc"]))
             params = None
             param_names = None
             if self.params_key in handle:
@@ -93,9 +108,7 @@ class Hdf5Dataset(BaseDataset):
                 if isinstance(node, h5py.Group):
                     params = np.asarray(node["values"])
                     if "names" in node:
-                        param_names = [
-                            v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
-                            for v in np.asarray(node["names"])]
+                        param_names = [self._decode(v) for v in np.asarray(node["names"])]
                 else:
                     params = np.asarray(node)
             ids = (np.asarray(handle[self.id_key])
@@ -103,7 +116,12 @@ class Hdf5Dataset(BaseDataset):
             if params is not None and param_names is None and self.params_key in handle:
                 attrs = handle[self.params_key].attrs
                 if "names" in attrs:
-                    param_names = [str(v) for v in attrs["names"]]
+                    param_names = [self._decode(v) for v in attrs["names"]]
+
+            split_of_row: dict[int, str] = {}
+            for split_name, rows in (self.split_map or {}).items():
+                for row in rows:
+                    split_of_row[int(row)] = str(split_name)
 
             samples = []
             for i in range(n):
@@ -124,28 +142,60 @@ class Hdf5Dataset(BaseDataset):
                     else:
                         names = [f"p{j}" for j in range(len(params[i]))]
                     values = {name: float(v) for name, v in zip(names, params[i])}
+                omega = self.default_omega_m
+                if "OMm" in values and np.isfinite(values["OMm"]):
+                    omega = float(values["OMm"])
+                sample_id = (self._decode(ids[i]) if ids is not None
+                             else f"sample{i:04d}")
                 samples.append(Sample(
-                    id=str(ids[i]) if ids is not None else f"sample{i:04d}",
+                    id=sample_id,
                     inputs=inputs,
                     targets={self.target: y},
                     meta=Meta(
-                        box_mpc=self.box_mpc,
+                        box_mpc=box,
                         z_grid=None if z is None else np.asarray(z, dtype=np.float64),
-                        omega_m=self.default_omega_m,
+                        omega_m=omega,
                         params=values,
                     ),
+                    split=split_of_row.get(i),
                 ))
+        self.cone_ids = [sample.id for sample in samples]
         return samples
+
+    # ------------------------------------------------------------- selection
+    def row_indices_for_ids(self, ids) -> list[int]:
+        """Map cone ids to cache rows; fail if any id is absent."""
+        samples = self._samples()
+        position = {sample.id: index for index, sample in enumerate(samples)}
+        missing = [str(value) for value in ids if str(value) not in position]
+        if missing:
+            raise KeyError(
+                f"{len(missing)} recorded cone id(s) are absent from "
+                f"{self.path.name}: {missing[:5]}")
+        return [position[str(value)] for value in ids]
 
     def describe(self) -> dict:
         samples = self._samples()
-        first = samples[0] if samples else None
+        visible = self._visible(samples)
+        first = visible[0] if visible else None
         return {
             "format": "hdf5",
             "path": str(self.path),
-            "n_samples": len(samples),
+            "n_total": len(samples),
+            "n_samples": len(visible),
+            "split": self.split,
+            "indices": None if self.indices is None else len(self.indices),
             "shape": list(first.shape) if first else None,
             "box_mpc": first.meta.box_mpc if first else None,
             "inputs": sorted(first.inputs) if first else [],
             "targets": sorted(first.targets) if first else [],
+            "splits": _split_counts(samples),
         }
+
+
+def _split_counts(samples) -> dict:
+    counts: dict[str, int] = {}
+    for sample in samples:
+        key = sample.split or "undeclared"
+        counts[key] = counts.get(key, 0) + 1
+    return counts

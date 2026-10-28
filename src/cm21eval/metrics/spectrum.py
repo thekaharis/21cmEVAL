@@ -28,6 +28,7 @@ class SpectrumMetrics(Metric):
         self.records: list[dict] = []
         self._binner = None
         self._k = None
+        self._highk = None
 
     def _bins(self, nx, ny, box):
         key = (nx, ny, round(box, 9), self.settings.n_k_bins)
@@ -76,6 +77,10 @@ class SpectrumMetrics(Metric):
         ratio[thin] = np.nan
         r[thin] = np.nan
         scale = binner.centers ** 2 / (2 * np.pi)
+        highk = self._highk_scores(t, p)
+        highk_stage = np.array([
+            (float(np.mean(highk[mask])) if mask.any() else np.nan)
+            for mask in masks])
         self.records.append({
             "sample": sample.id,
             "n_stage": stage_n,
@@ -83,7 +88,39 @@ class SpectrumMetrics(Metric):
             "r": r,
             "d2_truth": scale * mean_pt,
             "d2_pred": scale * mean_pp,
+            "highk": highk_stage,
         })
+
+    def _highk_matrix(self, nx, ny):
+        key = (nx, ny, self.settings.highk_k_min, self.settings.highk_bins)
+        if self._highk is None or self._highk[0] != key:
+            fx = np.fft.fftfreq(nx)
+            fy = np.fft.rfftfreq(ny)
+            radius = np.sqrt(fx[:, None] ** 2 + fy[None, :] ** 2).ravel()
+            edges = np.linspace(self.settings.highk_k_min,
+                                float(radius.max()),
+                                self.settings.highk_bins + 1)
+            index = np.digitize(radius, edges) - 1
+            valid = (radius >= self.settings.highk_k_min) & (
+                index < self.settings.highk_bins) & (radius > 0)
+            matrix = np.zeros((int(valid.sum()), self.settings.highk_bins))
+            matrix[np.arange(matrix.shape[0]), index[valid]] = 1.0
+            counts = np.maximum(matrix.sum(axis=0), 1.0)
+            self._highk = (key, valid, matrix, counts)
+        return self._highk[1:]
+
+    def _highk_scores(self, truth, pred):
+        """Per-slice mean (log P_pred/P_true)^2 above ``highk_k_min``."""
+        valid, matrix, counts = self._highk_matrix(*truth.shape[:2])
+        ft = np.fft.rfft2(truth, axes=(0, 1), norm="ortho")
+        fp = np.fft.rfft2(pred, axes=(0, 1), norm="ortho")
+        pt = (np.abs(ft) ** 2).reshape(-1, truth.shape[2])[valid]
+        pp = (np.abs(fp) ** 2).reshape(-1, pred.shape[2])[valid]
+        binned_t = (matrix.T @ pt).T / counts[None, :]
+        binned_p = (matrix.T @ pp).T / counts[None, :]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ratio = np.log((binned_p + 1e-12) / (binned_t + 1e-12))
+        return np.mean(ratio ** 2, axis=1)
 
     def _maps(self):
         """(n_samples, n_rows, nb) arrays for ratio, r, Delta^2."""
@@ -96,6 +133,12 @@ class SpectrumMetrics(Metric):
         if not self.records:
             return {}
         ratio, r, d2t, d2p = self._maps()
+        thin = np.stack([record["n_stage"] < self.settings.min_stage_slices
+                         for record in self.records])
+        d2t[thin] = np.nan
+        d2p[thin] = np.nan
+        highk = np.stack([record["highk"] for record in self.records])
+        highk_med, _, _ = median_band(highk, axis=0)
         ratio_med, ratio_lo, ratio_hi = median_band(ratio, axis=0)
         r_med, r_lo, r_hi = median_band(r, axis=0)
         d2t_med, _, _ = median_band(d2t, axis=0)
@@ -119,6 +162,7 @@ class SpectrumMetrics(Metric):
                 "delta2_truth_med": d2t_med[row],
                 "delta2_pred_med": d2p_med[row],
                 "k_r90": k_crossing(k, r_med[row], self.settings.coherence_level),
+                "highk": _value(highk_med, row),
             }
             stages.append(entry)
 
@@ -130,6 +174,7 @@ class SpectrumMetrics(Metric):
             headline[f"ratio_k{name}"] = _value(active["power_ratio_med"], index)
             headline[f"coherence_k{name}"] = _value(active["coherence_med"], index)
         headline["k_r90"] = active["k_r90"]
+        headline["highk"] = active["highk"]
         reference = int(np.argmin(np.abs(np.log(k) - np.log(0.2))))
         headline["k_ref"] = float(k[reference])
         headline["ratio_ref"] = _value(active["power_ratio_med"], reference)
@@ -146,7 +191,8 @@ class SpectrumMetrics(Metric):
         if not self.records:
             return {}
         ratio, r, d2t, d2p = self._maps()
-        out = {"spectrum_k": np.asarray(self._k)}
+        out = {"spectrum_k": np.asarray(self._k),
+               "spectrum_highk": np.stack([r["highk"] for r in self.records])}
         labels = stage_labels(self.settings.stage_edges, self.settings.active_range)
         for row, label in enumerate(labels):
             token = label.replace(" ", "_").replace("-", "_").replace(".", "p")

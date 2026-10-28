@@ -30,6 +30,11 @@ class BaseDataset:
         if self.indices is not None:
             samples = [samples[i] for i in self.indices if 0 <= i < len(samples)]
         if self.split:
+            if samples and all(sample.split is None for sample in samples):
+                raise ValueError(
+                    f"this dataset does not declare splits, so --split "
+                    f"{self.split!r} cannot be honoured. Pass --indices or "
+                    f"--indices-json to select the evaluation rows explicitly.")
             samples = [s for s in samples if s.split == self.split]
         if self.limit is not None:
             samples = samples[:self.limit]

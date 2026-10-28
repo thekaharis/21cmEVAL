@@ -156,7 +156,8 @@ def test_morphology_identical():
     result = metric.result()
     assert result["count_ratio"] == pytest.approx(1.0)
     assert result["largest_fraction_ratio"] == pytest.approx(1.0)
-    assert result["iou_at_matched_fraction"]["0.5"] == pytest.approx(1.0)
+    assert result["iou"]["matched"] == pytest.approx(1.0)
+    assert result["iou"]["threshold"] == pytest.approx(1.0)
 
 
 def test_anisotropy_perfect():
@@ -167,6 +168,74 @@ def test_anisotropy_perfect():
     headline = metric.result()["headline"]
     assert headline["coherence_high_kpar"] == pytest.approx(1.0, abs=1e-9)
     assert headline["anisotropy_median"] == pytest.approx(1.0, abs=1e-9)
+
+
+def test_parity_counts_upper_edge():
+    truth = np.ones((10, 10, 2), dtype=np.float32)
+    sample = Sample(
+        id="ones", inputs={"density": np.ones_like(truth)},
+        targets={"xhi": truth},
+        meta=Meta(box_mpc=100.0, z_grid=np.linspace(5, 25, 2)))
+    metric = ParityMetrics(SETTINGS)
+    metric.update(sample, {"xhi": truth})
+    result = metric.result()
+    assert result["n_voxels"] == truth.size
+    assert result["headline"]["conditional_bias_max"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_parity_percentiles_present():
+    sample = make_sample()
+    truth = sample.targets["xhi"]
+    metric = ParityMetrics(SETTINGS)
+    metric.update(sample, {"xhi": np.clip(truth + 0.05, 0, 1)})
+    bins = metric.result()["bins"]
+    assert bins and bins[0]["pred_p50"] is not None
+
+
+def test_eft_normalisation_matches_manual():
+    sample = make_sample()
+    truth = sample.targets["xhi"]
+    density = sample.inputs["density"].astype(np.float64)
+    metric = EftMetrics(SETTINGS)
+    metric.update(sample, {"xhi": truth})
+    stage = metric.rows[0]["stages"][-1]
+    binner = metric._binner[1]
+    n = truth.shape[2]
+    u = truth - truth.mean(axis=(0, 1), keepdims=True)
+    delta = density - density.mean(axis=(0, 1), keepdims=True)
+    dd = binner.slice_sums(delta).sum(axis=0)
+    td = binner.cross_sums(u, delta).sum(axis=0)
+    tt = binner.slice_sums(u).sum(axis=0)
+    expected = (tt - td ** 2 / dd) / (binner.counts * n)
+    expected = np.where(expected > 0, expected, np.nan)
+    assert np.allclose(stage["eps_truth"], expected, equal_nan=True, rtol=1e-12)
+
+
+def test_morphology_bimodal_iou():
+    rng = np.random.default_rng(3)
+    truth = (rng.random((16, 16, 8)) > 0.5).astype(np.float32)
+    pred = (rng.random((16, 16, 8)) > 0.5).astype(np.float32)
+    sample = Sample(
+        id="bimodal", inputs={"density": np.ones_like(truth)},
+        targets={"xhi": truth},
+        meta=Meta(box_mpc=100.0, z_grid=np.linspace(5, 25, 8)))
+    metric = MorphologyMetrics(SETTINGS)
+    metric.update(sample, {"xhi": pred})
+    result = metric.result()["iou"]
+    assert 0 <= result["threshold"] <= 1
+    assert 0 <= result["matched"] <= 1
+    assert 0 <= result["f0.5"] <= 1
+
+
+def test_front_skips_one_cell_axis():
+    truth = np.zeros((1, 8, 4), dtype=np.float32)
+    sample = Sample(
+        id="thin", inputs={"density": np.ones_like(truth)},
+        targets={"xhi": truth},
+        meta=Meta(box_mpc=100.0, z_grid=np.linspace(5, 25, 4)))
+    metric = FrontMetrics(SETTINGS)
+    metric.update(sample, {"xhi": truth})
+    assert metric.result()["skipped_samples"] == 1
 
 
 def test_parity_perfect():

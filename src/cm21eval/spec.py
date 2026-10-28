@@ -39,7 +39,7 @@ class Sample:
     inputs: dict[str, np.ndarray]
     targets: dict[str, np.ndarray]
     meta: Meta = field(default_factory=Meta)
-    split: str = "test"
+    split: str | None = None
 
     def __post_init__(self):
         for name, value in self.inputs.items():
@@ -84,17 +84,42 @@ class Sample:
 
 
 def check_prediction(prediction, sample: Sample, names=None) -> None:
-    """Fail loudly when an adapter returns a field of the wrong shape."""
+    """Fail loudly when an adapter returns a missing, wrong-shape or NaN field.
+
+    A NaN-tolerant metric would turn a broken forward pass into a plausible
+    report, so non-finite values are an error here rather than a masked value.
+    """
     if not prediction:
         raise ValueError(f"adapter returned no fields for sample {sample.id!r}")
     wanted = names or sample.targets.keys()
     for name in wanted:
         if name not in prediction:
-            continue
+            raise KeyError(
+                f"prediction for sample {sample.id!r} has no field {name!r}; "
+                f"adapter returned {sorted(prediction)}"
+            )
         array = np.asarray(prediction[name])
         expected = np.asarray(sample.targets.get(name, sample.shape)).shape
         if array.shape != expected:
             raise ValueError(
                 f"prediction {name!r} for sample {sample.id!r} has shape "
                 f"{array.shape}, expected {expected}"
+            )
+        bad = int(np.count_nonzero(~np.isfinite(array)))
+        if bad:
+            raise ValueError(
+                f"prediction {name!r} for sample {sample.id!r} has {bad} "
+                f"non-finite value(s)"
+            )
+
+
+def check_targets(sample: Sample) -> None:
+    """Targets must be finite 3-D fields before any metric sees them."""
+    for name, value in sample.targets.items():
+        array = np.asarray(value)
+        bad = int(np.count_nonzero(~np.isfinite(array)))
+        if bad:
+            raise ValueError(
+                f"target {name!r} of sample {sample.id!r} has {bad} "
+                f"non-finite value(s)"
             )

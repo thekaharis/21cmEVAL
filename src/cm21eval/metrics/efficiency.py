@@ -28,12 +28,20 @@ class EfficiencyMetrics(Metric):
         self.slices: list[int] = []
         self.peak: float | None = None
         self.model_info: dict = {}
+        self.benchmark: dict | None = None
 
     def attach(self, model_info):
         self.model_info = model_info
         value = model_info.get("peak_memory_bytes")
         if value:
             self.peak = float(value) / 2 ** 20
+
+    def observe_benchmark(self, stats: dict) -> None:
+        """Replace per-call timings with the adapter's dedicated benchmark."""
+        if stats.get("seconds"):
+            self.benchmark = stats
+            if stats.get("peak_bytes"):
+                self.peak = float(stats["peak_bytes"]) / 2 ** 20
 
     def update(self, sample, prediction, aux=None, runtime=None):
         if not runtime or "seconds" not in runtime:
@@ -45,9 +53,16 @@ class EfficiencyMetrics(Metric):
             self.peak = max(self.peak or 0.0, float(peak) / 2 ** 20)
 
     def result(self):
-        if not self.seconds:
+        if self.benchmark and self.benchmark.get("seconds"):
+            seconds = np.asarray(self.benchmark["seconds"], dtype=float)
+            slices = int(self.benchmark.get("slices", 0))
+            timing = "forward_only"
+        elif self.seconds:
+            seconds = np.asarray(self.seconds)
+            slices = int(np.sum(self.slices))
+            timing = "per_call"
+        else:
             return {}
-        seconds = np.asarray(self.seconds)
         median = float(np.median(seconds))
         return {
             "parameters": self.model_info.get("parameters"),
@@ -56,12 +71,15 @@ class EfficiencyMetrics(Metric):
             "ms_per_sample_p16": float(np.percentile(seconds, 16)) * 1e3,
             "ms_per_sample_p84": float(np.percentile(seconds, 84)) * 1e3,
             "samples_per_s": 1.0 / median if median > 0 else None,
-            "slices_per_s": float(np.sum(self.slices) / np.sum(seconds))
+            "slices_per_s": float(slices / np.sum(seconds))
             if np.sum(seconds) > 0 else None,
+            "timing": timing,
             "peak_memory_mib": self.peak,
             "n_timed": int(seconds.size),
             "device": self.model_info.get("device"),
         }
 
     def arrays(self):
+        if self.benchmark and self.benchmark.get("seconds"):
+            return {"efficiency_seconds": np.asarray(self.benchmark["seconds"])}
         return {"efficiency_seconds": np.asarray(self.seconds)} if self.seconds else {}

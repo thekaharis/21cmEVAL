@@ -40,7 +40,7 @@ class EdgeMetrics(Metric):
         error = pred - truth
         nx, ny = truth.shape[:2]
 
-        width = max(1, int(round(min(nx, ny) * self.settings.edge_width_fraction)))
+        width = max(1, min(nx, ny) // 10)
         edge = np.zeros((nx, ny), dtype=bool)
         edge[:width], edge[-width:] = True, True
         edge[:, :width], edge[:, -width:] = True, True
@@ -75,9 +75,12 @@ class EdgeMetrics(Metric):
 
         if self.active_range_rows:
             rows = np.asarray(self.active_range_rows)
-            active_z = (float(rows[:, 0].mean()), float(rows[:, 1].mean()))
+            active_z = (float(np.median(rows[:, 0])), float(np.median(rows[:, 1])))
+            active_z_band = (float(np.percentile(rows[:, 0], 16)),
+                             float(np.percentile(rows[:, 1], 84)))
         else:
             active_z = (None, None)
+            active_z_band = (None, None)
         return {
             "transverse_edge_rmse": ratio(self.ss_edge, self.n_edge),
             "transverse_interior_rmse": ratio(self.ss_interior, self.n_interior),
@@ -86,5 +89,7 @@ class EdgeMetrics(Metric):
             if (self.n_edge + self.n_interior) else None,
             "active_z_min": active_z[0],
             "active_z_max": active_z[1],
+            "active_z_min_p16": active_z_band[0],
+            "active_z_max_p84": active_z_band[1],
             "global_history_rmse": ratio(self.ss_history, self.n_history),
         }

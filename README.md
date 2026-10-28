@@ -35,9 +35,10 @@ cm21eval demo --out demo
 # 2. Score an fno-21cm run on its own cube cache
 cm21eval run \
     --data /work/data/compressed/cubes_3d.h5 \
+    --indices-json /work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/run_metadata.json \
     --model fno=fno21cm:/work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/best_model_state_dict.pt \
     --fno-root /work/fno-21cm \
-    --split test --limit 200 --out results/fno
+    --limit 200 --out results/fno
 
 # 3. Compare several models in one pass over the data
 cm21eval run --data cubes/ \
@@ -54,6 +55,7 @@ cm21eval run --data cubes/ \
 |---|---|
 | `results.json` | complete report, schema `cm21eval/1`, all nested metrics |
 | `summary.csv` | every scalar leaf as one column, one row per model |
+| `stages.csv` | long-form stage/chunk table: model, metric, group, stage, key, value |
 | `report.md` | headline table plus per-stage tables |
 | `curves.npz` | spectra, PDFs, profiles, per-sample records |
 
@@ -103,10 +105,13 @@ Nz)` + `y`, or `density` + `neutral_fraction` + `target_z` + `params`.
 For a different layout construct `Hdf5Dataset` directly with explicit keys —
 `cm21eval.data.hdf5` documents every argument.
 
-Rows are **not** split automatically. Pass `--indices 0-199` for explicit row
+An HDF5 cache does not declare train/val/test splits, so `--split test` is
+rejected instead of scoring every row. Use `--indices 0-199` for explicit row
 numbers, or `--indices-json path/to/run_metadata.json` to reuse the split the
-checkpoint was trained with (`split.test_indices`); evaluating training cones
-as "test" is the easiest way to produce a meaningless report.
+checkpoint was trained with. The latter prefers `split.test_cone_ids` and maps
+them through the cache's `cone_id`, falling back to `test_indices` only when
+the file has no ids; a recorded cone that is missing from the cache is an
+error, not a silent omission.
 
 ## Model adapters
 
@@ -153,11 +158,11 @@ truth and prediction are always paired. `active` is the last row: slices with
 
 | metric | reports | source in `fno-21cm` |
 |---|---|---|
-| `voxel` | RMSE, MSE, MAE, bias, R², Pearson r, R² per sample (mean/p16/p84) | `viz/rmse_r2_eval.py`, `util/multifield_metrics.py` |
+| `voxel` | RMSE, MSE, MAE, bias, R², Pearson r, R² per sample (mean/p16/p84), gradient RMSE, global-history MAE | `viz/rmse_r2_eval.py`, `util/multifield_metrics.py`, `fno_xhi2d.py` |
 | `edge` | transverse edge vs interior RMSE, active-window RMSE, global-history RMSE | `util/metrics_21cm.py`, `viz/physical_evaluation.py` |
-| `spectrum` | transverse P(k) ratio, coherence r(k), Δ²(k), k where r drops below 0.9 | `viz/power_spectrum_evaluation.py` |
+| `spectrum` | transverse P(k) ratio, coherence r(k), Δ²(k), k where r drops below 0.9, high-k log-power score | `viz/power_spectrum_evaluation.py`, `losses.HighKPowerRatio` |
 | `bubble` | mean-free-path bubble-size PDFs, restricted Wasserstein-1, Jensen-Shannon, size bias, censored fraction | `viz/bubble_size_evaluation.py`, `util/metrics_21cm.py` |
-| `morphology` | 3-D neutral-region count, mean and volume-weighted radius, largest-bubble fraction, ionized-mask IoU at matched ionized fraction | `util/metrics_21cm.py`, `tools_excursion_set_diagnostic.py` |
+| `morphology` | 3-D ionized-region count, mean and volume-weighted radius, largest-bubble fraction, IoU at the fixed threshold and at the true ionized cell count | `util/metrics_21cm.py`, `tools_excursion_set_diagnostic.py` |
 | `history` | τ_e, z(x_HI = 0.25/0.5/0.75), Δz, errors in Planck 2018 σ | `util/physical_stats.py`, `viz/physical_evaluation.py` |
 | `observable` | x_HI and dT_b PDFs (W1), partially ionized fraction, dT_b variance/skewness, Δ²₂₁(k), power bias in units of single-slice sample variance | `viz/physical_evaluation.py` |
 | `eft` | transfer T(k), stochasticity P_ε(k), r_uδ, fits b₁ + b_k²k² and P_ε,0 + P_ε,2k² | `viz/physical_evaluation.py`, `util/physical_stats.py` |
@@ -290,13 +295,17 @@ src/cm21eval/
   plotting belongs to the analysis notebook of the paper.
 * Evaluate the LOS resampling grid itself (`viz/los_grid_evaluation.py`); that
   is a dataset diagnostic, not a model score.
+* Score several output fields in one pass. Multifield runs (x_HI, δT_b,
+  velocity) must be evaluated one `--target` at a time; the physics metrics
+  (`history`, `observable`, `eft`, `front`) are x_HI-specific and will be
+  skipped or meaningless for other targets.
 * Know your units. Density must be the evolved field with mean 1 and the box
   size must be the transverse comoving size in Mpc; everything else follows.
 
 ## Tests
 
 ```bash
-python -m pytest          # 58 tests, ~2 s, no data and no GPU
+python -m pytest          # 71 tests, ~2 s, no data and no GPU
 cm21eval selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code

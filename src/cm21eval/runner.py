@@ -6,6 +6,7 @@ per voxel; every accumulator is a sum, a histogram or a per-cone scalar.
 """
 from __future__ import annotations
 
+import itertools
 import platform
 import sys
 import time
@@ -16,7 +17,7 @@ import numpy as np
 
 from . import registry
 from .settings import Settings
-from .spec import check_prediction
+from .spec import check_prediction, check_targets
 
 
 @dataclass
@@ -41,9 +42,10 @@ def evaluate(adapter, dataset, settings: Settings,
     available = registry.available()
     metrics = registry.build(names, settings, metric_options)
 
-    first = next(iter(dataset), None)
+    iterator = iter(dataset)
+    first = next(iterator, None)
     if first is None:
-        raise ValueError("dataset is empty; check --split and --limit")
+        raise ValueError("dataset is empty; check --split, --indices and --limit")
     skipped = {}
     usable = []
     for metric in metrics:
@@ -64,8 +66,19 @@ def evaluate(adapter, dataset, settings: Settings,
     started = time.perf_counter()
     n_samples = 0
     total = len(dataset) if hasattr(dataset, "__len__") else None
+    geometry = None
+    benchmark_pool = []
     try:
-        for sample in dataset:
+        for sample in itertools.chain([first], iterator):
+            check_targets(sample)
+            current = (sample.shape, round(float(sample.meta.box_mpc), 6)
+                       if sample.meta.box_mpc is not None else None)
+            if geometry is None:
+                geometry = current
+            elif current != geometry:
+                raise ValueError(
+                    "the metric suite requires one geometry per run: got "
+                    f"{geometry} then {current} at sample {sample.id!r}")
             t0 = time.perf_counter()
             prediction = adapter.predict(sample)
             elapsed = time.perf_counter() - t0
@@ -80,9 +93,19 @@ def evaluate(adapter, dataset, settings: Settings,
             for metric in usable:
                 metric.update(sample, prediction, aux=aux,
                               runtime={"seconds": elapsed})
+            if len(benchmark_pool) < settings.benchmark_samples:
+                benchmark_pool.append(sample)
             n_samples += 1
             if progress is not None:
                 progress(n_samples, total, sample.id)
+
+        if benchmark_pool and hasattr(adapter, "benchmark"):
+            stats = adapter.benchmark(benchmark_pool, settings.warmup,
+                                      settings.iters)
+            for metric in usable:
+                observe = getattr(metric, "observe_benchmark", None)
+                if callable(observe):
+                    observe(stats)
 
         arrays = {}
         for metric in usable:

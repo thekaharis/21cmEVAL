@@ -31,7 +31,7 @@ class Fno21cmAdapter(BaseAdapter):
     framework = "fno-21cm"
 
     def __init__(self, checkpoint, project_root: str | Path | None = None,
-                 device: str | None = None):
+                 device: str | None = None, target: str = "xhi"):
         import torch
 
         checkpoint = Path(checkpoint).expanduser().resolve()
@@ -60,7 +60,8 @@ class Fno21cmAdapter(BaseAdapter):
         self.channels = channels
         self.metadata = metadata
         self.checkpoint = checkpoint
-        self.parameters = _count(self.model, torch)
+        self.target = target
+        self.parameters, self.complex_parameters = _count(self.model, torch)
 
     def _channels(self, sample: Sample) -> np.ndarray:
         ready = sample.inputs.get("x")
@@ -103,15 +104,48 @@ class Fno21cmAdapter(BaseAdapter):
         array = output.detach().float().cpu().numpy()
         while array.ndim > 3:
             array = array[0]
-        return {"xhi": array}
+        return {self.target: array}
+
+    def benchmark(self, samples, warmup: int = 3, iters: int = 10) -> dict:
+        """Reference-style forward timing with pre-transferred inputs."""
+        import time
+
+        import torch
+
+        tensors = []
+        for sample in samples:
+            stacked = self._channels(sample)
+            tensors.append(torch.from_numpy(stacked).unsqueeze(0).to(self.device))
+        with torch.no_grad():
+            for index in range(max(0, warmup)):
+                self.model(x=tensors[index % len(tensors)])
+            cuda = str(self.device).startswith("cuda")
+            if cuda:
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+            times = []
+            for index in range(max(1, iters)):
+                x = tensors[index % len(tensors)]
+                if cuda:
+                    torch.cuda.synchronize()
+                start = time.perf_counter()
+                self.model(x=x)
+                if cuda:
+                    torch.cuda.synchronize()
+                times.append(time.perf_counter() - start)
+        peak = torch.cuda.max_memory_allocated() if cuda else None
+        return {"seconds": times, "peak_bytes": peak,
+                "slices": int(tensors[0].shape[-1]), "n_timed": len(times)}
 
     def describe(self) -> dict:
         info = super().describe()
         info.update({
             "parameters": self.parameters,
+            "complex_parameters": self.complex_parameters,
             "device": self.device,
             "checkpoint": str(self.checkpoint),
             "channels": list(self.channels),
+            "target": self.target,
             "model_kind": (self.metadata.get("model_config") or {}).get("kind"),
         })
         return info
@@ -137,8 +171,13 @@ def _normalize(metadata: dict, name: str, value: float) -> float:
     return (float(value) - mean) / std
 
 
-def _count(model, torch) -> int:
-    total = 0
+def _count(model, torch) -> tuple[int, int]:
+    """(real parameters, complex parameters); a complex weight is two reals."""
+    real, complex_ = 0, 0
     for parameter in model.parameters():
-        total += parameter.numel() * (2 if torch.is_complex(parameter) else 1)
-    return total
+        if torch.is_complex(parameter):
+            real += parameter.numel() * 2
+            complex_ += parameter.numel()
+        else:
+            real += parameter.numel()
+    return real, complex_

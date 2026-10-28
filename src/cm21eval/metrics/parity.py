@@ -1,14 +1,16 @@
 """Calibration: which part of the x_HI range does the model get wrong?
 
 A binned parity curve. Voxels are binned by their **true** value; within each
-bin we report the mean and spread of the prediction and the RMSE. Systematic
-departure of the conditional mean from the identity is conditional bias
-``E[pred | true] - true`` -- the hedging-toward-the-mean signature of an
-MSE-trained emulator in the transition range. The bin occupancy is reported
-with it, because x_HI is strongly bimodal and the sparse mid-range bins would
-otherwise look as trustworthy as the saturated ones.
+bin we report the mean and spread of the prediction, its 16/50/84 percentiles
+and the RMSE. Systematic departure of the conditional mean from the identity
+is conditional bias ``E[pred | true] - true`` -- the hedging-toward-the-mean
+signature of an MSE-trained emulator in the transition range. The bin
+occupancy is reported with it, because x_HI is strongly bimodal and the sparse
+mid-range bins would otherwise look as trustworthy as the saturated ones.
 
-Everything is streaming per bin, so the cost is one pass and a few kB.
+This follows ``fno-21cm/viz/parity_diagnostic.py``: 50 true bins on [0, 1]
+with values clipped in (so x_HI = 1.0 is counted), and percentiles from a
+50 x 400 count histogram rather than from stored samples.
 """
 from __future__ import annotations
 
@@ -22,95 +24,98 @@ from .base import Metric
 class ParityMetrics(Metric):
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
-        lo, hi = settings.xhi_range
-        self.edges = np.linspace(max(0.0, lo), min(1.0, hi), 41)
-        self.centers = 0.5 * (self.edges[:-1] + self.edges[1:])
-        n = len(self.centers)
-        self.count = np.zeros(n)
-        self.sum_pred = np.zeros(n)
-        self.sum_pred2 = np.zeros(n)
-        self.sum_err2 = np.zeros(n)
-        self.sum_truth = np.zeros(n)
-        self.partial_ss = 0.0
-        self.partial_n = 0
+        self.n_true = 50
+        self.n_pred = 400
+        self.count = np.zeros(self.n_true, dtype=np.int64)
+        self.sum_pred = np.zeros(self.n_true)
+        self.sum_pred2 = np.zeros(self.n_true)
+        self.sum_truth = np.zeros(self.n_true)
+        self.sum_err2 = np.zeros(self.n_true)
+        self.h2d = np.zeros(self.n_true * self.n_pred, dtype=np.int64)
         self.lo, self.hi = settings.partial_range
+        self._partial_ss = 0.0
+        self._partial_count = 0
 
     def update(self, sample, prediction, aux=None, runtime=None):
-        truth = self.target(sample)
-        pred = self.prediction(prediction)
-        flat_t = truth.ravel()
-        flat_p = pred.ravel()
-        index = np.digitize(flat_t, self.edges) - 1
-        valid = (index >= 0) & (index < len(self.centers))
-        if not valid.any():
-            return
-        index = index[valid]
-        t = flat_t[valid]
-        p = flat_p[valid]
-        error2 = (p - t) ** 2
-        n = len(self.centers)
-        self.count += np.bincount(index, minlength=n)
-        self.sum_pred += np.bincount(index, weights=p, minlength=n)
-        self.sum_pred2 += np.bincount(index, weights=p * p, minlength=n)
-        self.sum_err2 += np.bincount(index, weights=error2, minlength=n)
-        self.sum_truth += np.bincount(index, weights=t, minlength=n)
+        truth = np.clip(self.target(sample).ravel(), 0.0, 1.0)
+        pred = np.clip(self.prediction(prediction).ravel(), 0.0, 1.0)
+        ti = np.minimum((truth * self.n_true).astype(np.int64),
+                        self.n_true - 1)
+        pi = np.minimum((pred * self.n_pred).astype(np.int64),
+                        self.n_pred - 1)
+        error2 = (pred - truth) ** 2
+        self.count += np.bincount(ti, minlength=self.n_true)
+        self.sum_pred += np.bincount(ti, weights=pred, minlength=self.n_true)
+        self.sum_pred2 += np.bincount(ti, weights=pred ** 2,
+                                      minlength=self.n_true)
+        self.sum_truth += np.bincount(ti, weights=truth, minlength=self.n_true)
+        self.sum_err2 += np.bincount(ti, weights=error2, minlength=self.n_true)
+        self.h2d += np.bincount(ti * self.n_pred + pi,
+                                minlength=self.n_true * self.n_pred)
+        partial = (truth > self.lo) & (truth < self.hi)
+        self._partial_ss += float(error2[partial].sum())
+        self._partial_count += int(partial.sum())
 
-        partial = (t > self.lo) & (t < self.hi)
-        self.partial_ss += float(error2[partial].sum())
-        self.partial_n += int(partial.sum())
+    def _percentiles(self):
+        hist = self.h2d.reshape(self.n_true, self.n_pred)
+        centers = (np.arange(self.n_pred) + 0.5) / self.n_pred
+        out = np.full((self.n_true, 3), np.nan)
+        for i in range(self.n_true):
+            total = hist[i].sum()
+            if total == 0:
+                continue
+            cumulative = np.cumsum(hist[i])
+            for j, q in enumerate((16.0, 50.0, 84.0)):
+                index = int(np.searchsorted(cumulative, q / 100.0 * total))
+                out[i, j] = centers[min(index, self.n_pred - 1)]
+        return out
 
     def result(self):
         if self.count.sum() == 0:
             return {}
         with np.errstate(invalid="ignore", divide="ignore"):
-            mean = np.where(self.count > 0, self.sum_pred / self.count, np.nan)
-            mean2 = np.where(self.count > 0, self.sum_pred2 / self.count, np.nan)
-            rmse = np.where(self.count > 0, np.sqrt(self.sum_err2 / self.count), np.nan)
-            truth_mean = np.where(self.count > 0, self.sum_truth / self.count, np.nan)
-            std = np.sqrt(np.maximum(mean2 - mean ** 2, 0.0))
+            n = np.maximum(self.count, 1).astype(np.float64)
+            mean = self.sum_pred / n
+            variance = np.clip(self.sum_pred2 / n - mean ** 2, 0.0, None)
+            truth_mean = self.sum_truth / n
+            rmse = np.sqrt(self.sum_err2 / n)
             bias = mean - truth_mean
-        occupied = self.count >= max(1, 0.001 * self.count.sum())
-        bias_max = float(np.nanmax(np.abs(bias[occupied]))) if occupied.any() else np.nan
+        percentiles = self._percentiles()
+        empty = self.count == 0
+        mean[empty] = np.nan
+        truth_mean[empty] = np.nan
+        rmse[empty] = np.nan
+        bias[empty] = np.nan
+        bias_max = _f(np.nanmax(np.abs(bias))) if (~empty).any() else None
         bins = [
             {
-                "center": float(self.centers[i]),
+                "center": float((i + 0.5) / self.n_true),
                 "count": int(self.count[i]),
                 "truth_mean": _f(truth_mean[i]),
                 "pred_mean": _f(mean[i]),
+                "pred_std": _f(np.sqrt(variance[i])),
+                "pred_p16": _f(percentiles[i, 0]),
+                "pred_p50": _f(percentiles[i, 1]),
+                "pred_p84": _f(percentiles[i, 2]),
                 "bias": _f(bias[i]),
-                "pred_std": _f(std[i]),
                 "rmse": _f(rmse[i]),
             }
-            for i in range(len(self.centers))
-            if self.count[i] > 0
+            for i in range(self.n_true) if self.count[i] > 0
         ]
         return {
             "bins": bins,
             "headline": {
-                "conditional_bias_max": _f(bias_max),
-                "partial_rmse": _f(
-                    np.sqrt(self.partial_ss / self.partial_n)
-                    if self.partial_n else np.nan),
-                "partial_voxels": int(self.partial_n),
+                "conditional_bias_max": bias_max,
+                "partial_rmse": (_f(np.sqrt(self._partial_ss / self._partial_count))
+                                 if self._partial_count else None),
+                "partial_voxels": int(self._partial_count),
             },
             "n_voxels": int(self.count.sum()),
         }
 
-    def arrays(self):
-        if self.count.sum() == 0:
-            return {}
-        return {
-            "parity_centers": self.centers,
-            "parity_count": self.count,
-            "parity_rmse": np.sqrt(np.divide(
-                self.sum_err2, self.count, out=np.full_like(self.count, np.nan),
-                where=self.count > 0)),
-            "parity_bias": np.divide(
-                self.sum_pred - self.sum_truth, self.count,
-                out=np.full_like(self.count, np.nan), where=self.count > 0),
-        }
-
-
 def _f(value):
-    value = float(value)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
     return value if np.isfinite(value) else None

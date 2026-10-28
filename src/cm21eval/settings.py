@@ -33,6 +33,8 @@ class Settings:
     k_targets: tuple[float, ...] = (0.1, 0.2, 0.5)
     eft_k_max: float = 0.25
     coherence_level: float = 0.9
+    highk_k_min: float = 0.2          # cycles per pixel, as in losses.HighKPowerRatio
+    highk_bins: int = 12
 
     # voxel / edge
     edge_width_fraction: float = 0.10
@@ -60,6 +62,43 @@ class Settings:
     # efficiency
     warmup: int = 3
     iters: int = 10
+    benchmark_samples: int = 4
+
+    def __post_init__(self):
+        if self.box_mpc <= 0:
+            raise ValueError("box_mpc must be positive")
+        if not 0 < self.threshold < 1:
+            raise ValueError("threshold must lie strictly between 0 and 1")
+        edges = tuple(self.stage_edges)
+        if len(edges) < 2 or any(b <= a for a, b in zip(edges[:-1], edges[1:])):
+            raise ValueError("stage_edges must be strictly increasing")
+        lo, hi = self.active_range
+        if not lo < hi:
+            raise ValueError("active_range must be increasing")
+        if self.n_k_bins < 2:
+            raise ValueError("n_k_bins must be at least 2")
+        if not self.k_targets or any(t <= 0 for t in self.k_targets):
+            raise ValueError("k_targets must be a non-empty list of positives")
+        if self.eft_k_max <= 0:
+            raise ValueError("eft_k_max must be positive")
+        if self.front_bin_mpc <= 0 or self.front_d_max_mpc <= self.front_bin_mpc:
+            raise ValueError("front_d_max_mpc must exceed front_bin_mpc > 0")
+        if self.bubble_bins < 2:
+            raise ValueError("bubble_bins must be at least 2")
+        if self.rays_per_slice < 0 or self.slices_per_stage < 1:
+            raise ValueError("rays_per_slice >= 0 and slices_per_stage >= 1")
+        if self.min_stage_slices < 1:
+            raise ValueError("min_stage_slices must be at least 1")
+        if not 0 <= self.highk_k_min < 0.5:
+            raise ValueError("highk_k_min must lie in [0, 0.5) cycles/pixel")
+        if self.highk_bins < 1:
+            raise ValueError("highk_bins must be positive")
+        if not 0 < self.edge_width_fraction < 0.5:
+            raise ValueError("edge_width_fraction must lie in (0, 0.5)")
+        if self.xhi_range[0] >= self.xhi_range[1]:
+            raise ValueError("xhi_range must be increasing")
+        if self.warmup < 0 or self.iters < 1:
+            raise ValueError("warmup >= 0 and iters >= 1")
 
     def updated(self, **values) -> "Settings":
         """Return a copy with the given fields replaced (unknown keys fail)."""

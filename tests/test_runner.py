@@ -71,6 +71,29 @@ def test_metrics_skip_without_density():
     assert "voxel" in result.metrics
 
 
+def test_nan_prediction_is_rejected():
+    class NaNModel:
+        def predict(self, sample):
+            return {"xhi": np.full_like(sample.targets["xhi"], np.nan)}
+
+        def describe(self):
+            return {}
+
+    with pytest.raises(ValueError, match="non-finite"):
+        evaluate(NaNModel(), dataset(1), SMALL, ["voxel"])
+
+
+def test_report_stages_csv(tmp_path):
+    result = evaluate(SmoothThresholdModel(), dataset(1), SMALL, ["all"])
+    result.name = "toy"
+    report.write(tmp_path, [result], {"n_samples": 1, "shape": [16, 16, 8]},
+                 SMALL.to_dict())
+    assert (tmp_path / "stages.csv").exists()
+    text = (tmp_path / "stages.csv").read_text()
+    assert "bubble.stages" not in text  # long-form columns, not dotted names
+    assert "spectrum,stages" in text
+
+
 def test_report_files(tmp_path):
     result = evaluate(SmoothThresholdModel(), dataset(1), SMALL, ["all"])
     result.name = "toy"
@@ -119,6 +142,25 @@ def test_cli_demo(tmp_path, capsys):
     assert code == 0
     assert (tmp_path / "data" / "manifest.json").exists()
     assert (tmp_path / "results" / "results.json").exists()
+
+
+def test_cli_indices_json_uses_cone_ids(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    path = tmp_path / "cubes.h5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("density", data=np.ones((3, 8, 8, 4)))
+        handle.create_dataset("neutral_fraction", data=np.zeros((3, 8, 8, 4)))
+        handle.create_dataset("cone_id", data=np.array([100, 101, 102]))
+        handle.create_dataset("target_z", data=np.linspace(5, 25, 4))
+    metadata = tmp_path / "run_metadata.json"
+    metadata.write_text(json.dumps(
+        {"split": {"test_cone_ids": [100, 102], "test_indices": [0, 1]}}))
+    out = tmp_path / "out"
+    assert main(["run", "--data", str(path), "--indices-json", str(metadata),
+                 "--model", "toy=synthetic:1.0", "--metrics", "voxel",
+                 "--out", str(out), "--quiet"]) == 0
+    payload = json.loads((out / "results.json").read_text())
+    assert payload["models"]["toy"]["n_samples"] == 2
 
 
 def test_cli_run_with_config(tmp_path):

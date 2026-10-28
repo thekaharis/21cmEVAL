@@ -89,7 +89,7 @@ class NpzDataset(BaseDataset):
             path = self.root / entry["path"]
             context = {
                 "id": entry.get("id", path.stem),
-                "split": entry.get("split", "test"),
+                "split": entry.get("split"),
                 "z_grid": entry.get("z_grid", default_z),
                 "box_mpc": entry.get("box_mpc", default_box),
                 "omega_m": entry.get("omega_m", default_omega),
@@ -149,18 +149,37 @@ class NpzDataset(BaseDataset):
                 omega_m=None if omega is None else float(omega),
                 params=params,
             ),
-            split=context.get("split", "test"),
+            split=context.get("split"),
         )
+
+    def row_indices_for_ids(self, ids) -> list[int]:
+        samples = self._samples()
+        position = {sample.id: index for index, sample in enumerate(samples)}
+        missing = [str(value) for value in ids if str(value) not in position]
+        if missing:
+            raise KeyError(
+                f"{len(missing)} recorded sample id(s) are absent from "
+                f"{self.root}: {missing[:5]}")
+        return [position[str(value)] for value in ids]
 
     def describe(self) -> dict:
         samples = self._samples()
-        first = samples[0] if samples else None
+        visible = self._visible(samples)
+        first = visible[0] if visible else None
+        counts: dict[str, int] = {}
+        for sample in samples:
+            key = sample.split or "undeclared"
+            counts[key] = counts.get(key, 0) + 1
         return {
             "format": "npz",
             "root": str(self.root),
-            "n_samples": len(samples),
+            "n_total": len(samples),
+            "n_samples": len(visible),
+            "split": self.split,
+            "indices": None if self.indices is None else len(self.indices),
             "shape": list(first.shape) if first else None,
             "box_mpc": first.meta.box_mpc if first else None,
             "inputs": sorted(first.inputs) if first else [],
             "targets": sorted(first.targets) if first else [],
+            "splits": counts,
         }

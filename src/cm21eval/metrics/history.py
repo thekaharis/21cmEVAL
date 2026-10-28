@@ -66,7 +66,7 @@ class HistoryMetrics(Metric):
             "pred_med": _f(nanmedian(tau_p)),
             "error_med": _f(nanmedian(tau_p - tau_t)),
             "error_sigma_med": _f(nanmedian(np.abs(tau_p - tau_t) / PLANCK_TAU_SIGMA)),
-            "truth_sigma_from_planck": _f(
+            "tau_truth_pull_from_planck": _f(
                 nanmedian((tau_t - PLANCK_TAU) / PLANCK_TAU_SIGMA)),
         }
         history = {}

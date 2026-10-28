@@ -38,7 +38,7 @@ def split_spec(spec: str) -> tuple[str, str]:
 
 
 def build(spec: str, fno_root: str | None = None,
-          device: str | None = None) -> BaseAdapter:
+          device: str | None = None, target: str = "xhi") -> BaseAdapter:
     adapter, argument = split_spec(spec)
     if adapter in {"python", "py", "numpy"}:
         path, _, attribute = argument.partition(":")
@@ -55,7 +55,7 @@ def build(spec: str, fno_root: str | None = None,
         model = factory(checkpoint) if checkpoint else factory()
         if checkpoint is None and hasattr(module, "load_checkpoint"):
             module.load_checkpoint(model)
-        return TorchModelAdapter(model, device=device)
+        return TorchModelAdapter(model, device=device, output_field=target)
     if adapter == "command":
         return CommandModelAdapter(argument)
     if adapter in {"synthetic", "toy"}:
@@ -63,7 +63,8 @@ def build(spec: str, fno_root: str | None = None,
 
         return SmoothThresholdModel(float(argument) if argument else 1.5)
     if adapter in {"fno21cm", "fno"}:
-        return Fno21cmAdapter(argument, project_root=fno_root, device=device)
+        return Fno21cmAdapter(argument, project_root=fno_root, device=device,
+                              target=target)
     raise ValueError(
         f"unknown adapter {adapter!r}; use python, torch, command or fno21cm")
 

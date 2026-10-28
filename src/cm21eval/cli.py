@@ -113,8 +113,6 @@ def _run(args) -> int:
     limit = pick(args.limit, "limit", None)
     fno_root = pick(args.fno_root, "fno_root", None)
     device = pick(args.device, "device", None)
-    indices = _resolve_indices(args, run_section, split)
-
     models = dict(config.get("models", {}))
     for item in args.model:
         if "=" not in item:
@@ -142,18 +140,36 @@ def _run(args) -> int:
     options = config.get("metric_options", {})
 
     dataset = open_data(
-        data_spec, target=target, density=density, split=split,
-        limit=limit, box_mpc=settings.box_mpc, indices=indices)
-    info = dataset.describe()
+        data_spec, target=target, density=density, split=None,
+        limit=None, box_mpc=settings.box_mpc)
+    selection = _resolve_selection(dataset, args, run_section, split)
+    if selection is not None:
+        # An explicit row selection already encodes the split; a second split
+        # filter would either be a no-op or silently drop rows.
+        dataset.indices = selection
+        dataset.split = None
+    else:
+        dataset.split = split
+    dataset.limit = limit
+    try:
+        info = dataset.describe()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     if not args.quiet:
         print(f"data   {info}")
+        if selection is None and split is None and "undeclared" in info.get(
+                "splits", {}):
+            print("warning: this file does not declare splits; every row is "
+                  "being evaluated. Use --indices-json <run_metadata.json> "
+                  "to reuse a checkpoint's test split.")
         print(f"metrics {', '.join(registry.available()) if names == ['all'] else ', '.join(names)}")
 
     results = []
     for name, spec in models.items():
         if not args.quiet:
             print(f"\n[{name}] {spec}")
-        adapter = adapters.build(spec, fno_root=fno_root, device=device)
+        adapter = adapters.build(spec, fno_root=fno_root, device=device,
+                                 target=target)
         result = evaluate(
             adapter, dataset, settings, names, options,
             progress=None if args.quiet else _progress(name),
@@ -206,7 +222,14 @@ def _demo(args) -> int:
     ))
 
 
-def _resolve_indices(args, run_section: dict, split: str | None):
+def _resolve_selection(dataset, args, run_section: dict, split: str | None):
+    """Row indices from an explicit list or from a run's recorded split.
+
+    The reference resolves splits by cone id, not row position, because merged
+    and reordered caches make positions stale. When the metadata records
+    ``<split>_cone_ids`` and the dataset knows its ids, map through those and
+    fail if any recorded cone is absent.
+    """
     text = args.indices or run_section.get("indices")
     path = args.indices_json
     if text and path:
@@ -214,10 +237,23 @@ def _resolve_indices(args, run_section: dict, split: str | None):
     if path:
         payload = json.loads(Path(path).read_text())
         block = payload.get("split", payload)
-        key = f"{split or 'test'}_indices"
-        if key not in block:
-            raise SystemExit(f"{path} has no split.{key}")
-        return [int(value) for value in block[key]]
+        name = split or "test"
+        cone_key, index_key = f"{name}_cone_ids", f"{name}_indices"
+        if cone_key in block:
+            mapper = getattr(dataset, "row_indices_for_ids", None)
+            if mapper is None:
+                if index_key not in block:
+                    raise SystemExit(
+                        f"{path} records {cone_key} but this dataset has no "
+                        f"ids to map them through, and no {index_key}")
+                return [int(value) for value in block[index_key]]
+            try:
+                return mapper(block[cone_key])
+            except KeyError as exc:
+                raise SystemExit(str(exc)) from None
+        if index_key in block:
+            return [int(value) for value in block[index_key]]
+        raise SystemExit(f"{path} has no split.{cone_key} or split.{index_key}")
     if text is None:
         return None
     if isinstance(text, list):

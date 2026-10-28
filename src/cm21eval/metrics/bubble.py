@@ -38,6 +38,7 @@ class BubbleSizeMetrics(Metric):
         self.per_sample: list[dict] = []
         self.edges = None
         self.centers = None
+        self._geometry = None
 
     def _stage_rows(self, truth):
         xbar = truth.mean(axis=(0, 1))
@@ -82,6 +83,8 @@ class BubbleSizeMetrics(Metric):
             "censored_fraction": censored / requested,
             "underflow_fraction": underflow / requested,
             "ionized_fraction": float(np.mean(ionized)) if ionized else np.nan,
+            "mean_hit_mpc": float(hits.mean()) if hits.size else np.nan,
+            "median_hit_mpc": float(np.median(hits)) if hits.size else np.nan,
             # Underflow (no ionized starting cell) enters the size distribution
             # as zero-length paths, censored rays as the cap -- exactly the
             # two-sided restriction used by fno-21cm.
@@ -96,14 +99,28 @@ class BubbleSizeMetrics(Metric):
         cell = (box / truth.shape[0], box / truth.shape[1])
         cap = (self.settings.max_distance_mpc
                if self.settings.max_distance_mpc is not None else box)
+        geometry = (truth.shape[:2], round(box, 6), round(float(cap), 6))
+        if self._geometry is not None and geometry != self._geometry:
+            raise ValueError(
+                "bubble metric requires one geometry per run: got "
+                f"{self._geometry} then {geometry} at sample {sample.id!r}")
+        self._geometry = geometry
+        minimum = max(float(cell[0]) / 8.0, 1e-4)
+        if float(cap) < minimum:
+            raise ValueError(
+                f"max_distance_mpc={cap:g} is below the smallest resolvable "
+                f"bubble size {minimum:g} Mpc; raise it above one cell/8")
         if self.edges is None:
-            minimum = max(float(cell[0]) / 8.0, 1e-4)
-            self.edges = np.geomspace(minimum, float(cap), self.settings.bubble_bins + 1)
+            self.edges = np.geomspace(minimum, float(cap),
+                                      self.settings.bubble_bins + 1)
             self.centers = np.sqrt(self.edges[:-1] * self.edges[1:])
 
         rows = self._stage_rows(truth)
         stages = []
         for stage_index, slices in enumerate(rows):
+            if len(slices) < self.settings.min_stage_slices:
+                stages.append(None)
+                continue
             t = self._sample_stage(truth, slices, sample.id, stage_index, self.edges, cell)
             p = self._sample_stage(pred, slices, sample.id, stage_index, self.edges, cell)
             if t is None or p is None:
@@ -129,6 +146,12 @@ class BubbleSizeMetrics(Metric):
                 "censored_pred": p["censored_fraction"],
                 "underflow_truth": t["underflow_fraction"],
                 "underflow_pred": p["underflow_fraction"],
+                "ionized_truth": t["ionized_fraction"],
+                "ionized_pred": p["ionized_fraction"],
+                "mean_hit_truth_mpc": t["mean_hit_mpc"],
+                "mean_hit_pred_mpc": p["mean_hit_mpc"],
+                "median_hit_truth_mpc": t["median_hit_mpc"],
+                "median_hit_pred_mpc": p["median_hit_mpc"],
                 "ionized_truth": t["ionized_fraction"],
                 "ionized_pred": p["ionized_fraction"],
                 "mass_truth": t["mass"],
@@ -183,6 +206,18 @@ class BubbleSizeMetrics(Metric):
                     stacks("censored_truth")[:, row])),
                 "censored_pred": _f(nanmedian(
                     stacks("censored_pred")[:, row])),
+                "underflow_truth": _f(nanmedian(
+                    stacks("underflow_truth")[:, row])),
+                "underflow_pred": _f(nanmedian(
+                    stacks("underflow_pred")[:, row])),
+                "ionized_truth": _f(nanmedian(
+                    stacks("ionized_truth")[:, row])),
+                "ionized_pred": _f(nanmedian(
+                    stacks("ionized_pred")[:, row])),
+                "mean_hit_truth_mpc": _f(nanmedian(
+                    stacks("mean_hit_truth_mpc")[:, row])),
+                "mean_hit_pred_mpc": _f(nanmedian(
+                    stacks("mean_hit_pred_mpc")[:, row])),
             })
         active = stages[-1]
         return {
@@ -202,11 +237,15 @@ class BubbleSizeMetrics(Metric):
         if not self.per_sample:
             return {}
         out = {"bubble_radius_mpc": self.centers}
-        for name, key in (("mass_truth", "mass_truth"), ("mass_pred", "mass_pred")):
-            rows = [row["stages"][-1][key] for row in self.per_sample
-                    if row["stages"][-1] is not None]
-            if rows:
-                out[f"bubble_{name}_active"] = np.stack(rows)
+        labels = [f"xbar{lo:.2f}_{hi:.2f}" for lo, hi in
+                  zip(self.settings.stage_edges[:-1], self.settings.stage_edges[1:])]
+        labels.append("active")
+        for j, label in enumerate(labels):
+            for name in ("mass_truth", "mass_pred"):
+                rows = [row["stages"][j][name] for row in self.per_sample
+                        if row["stages"][j] is not None]
+                if rows:
+                    out[f"bubble_{name}_{label}"] = np.stack(rows)
         return out
 
 

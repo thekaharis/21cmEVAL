@@ -32,20 +32,27 @@ from .base import BaseAdapter
 class CommandModelAdapter(BaseAdapter):
     framework = "command"
 
-    def __init__(self, command: str, timeout: float | None = None):
+    def __init__(self, command: str, timeout: float | None = None,
+                 include_targets: bool = False):
         if "{input}" not in command or "{output}" not in command:
             raise ValueError(
                 "command must contain {input} and {output} placeholders, got "
                 f"{command!r}")
         self.command = command
         self.timeout = timeout
+        # Off by default: writing the target into the input file lets a model
+        # return it unchanged and score RMSE=0. A model that genuinely needs an
+        # auxiliary target field must ask for it explicitly.
+        self.include_targets = bool(include_targets)
 
     def predict(self, sample: Sample) -> dict:
         with tempfile.TemporaryDirectory(prefix="cm21eval-") as workdir:
             work = Path(workdir)
             input_path = work / "sample.npz"
             output_path = work / "prediction.npz"
-            payload = {**sample.inputs, **sample.targets}
+            payload = dict(sample.inputs)
+            if self.include_targets:
+                payload.update(sample.targets)
             payload["meta"] = np.array(json.dumps({
                 "id": sample.id,
                 "box_mpc": sample.meta.box_mpc,

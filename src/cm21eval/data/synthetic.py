@@ -91,9 +91,12 @@ class SyntheticDataset(BaseDataset):
         return samples
 
     def describe(self):
+        visible = self._visible(self._samples())
         return {
             "format": "synthetic",
-            "n_samples": self.n_samples,
+            "n_total": self.n_samples,
+            "n_samples": len(visible),
+            "split": self.split,
             "shape": list(self.shape),
             "box_mpc": self.box_mpc,
         }

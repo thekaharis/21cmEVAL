@@ -38,6 +38,8 @@ class RadialMetrics(Metric):
         )
         k_fund = 2 * np.pi / max(box, box, dz * nz)
         k_ny = np.pi / max(dx, dy, dz)
+        if not k_fund < k_ny:
+            return None
         edges = np.geomspace(k_fund, k_ny, self.settings.n_k_bins + 1)
         edges[0] *= 1 - 1e-9
         edges[-1] *= 1 + 1e-9
@@ -57,8 +59,14 @@ class RadialMetrics(Metric):
                                    h=self.settings.hubble_h)
         else:
             dz = box / nz
-        edges, index, valid, centers = self._bins((nx, ny, nz), box, dz)
-        window = np.hanning(nz)[None, None, :] if nz > 1 else np.ones((1, 1, 1))
+        bins = self._bins((nx, ny, nz), box, dz)
+        if bins is None:
+            self.skipped = getattr(self, "skipped", 0) + 1
+            return
+        edges, index, valid, centers = bins
+        # A 2-sample Hann window is identically zero; use a rectangular
+        # window when the LOS axis is too short for a taper.
+        window = np.hanning(nz)[None, None, :] if nz > 2 else np.ones((1, 1, nz))
 
         def shell(field):
             centered = (field - field.mean()) * window

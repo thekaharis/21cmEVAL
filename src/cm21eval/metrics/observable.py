@@ -10,11 +10,12 @@ temperature and compares one-point statistics:
   it, a sharp field does not.
 * **variance and skewness** of dT_b versus the global neutral fraction. These
   are the moments a 21-cm power-spectrum experiment can actually constrain.
-* **Delta^2_21(k)** in mK^2 at fixed target wavenumbers, and its ratio.
+* **Delta^2_21(k)** in mK^2 from the dT_b field, and its ratio.
 * **power-bias significance**: ``(P_pred - P_truth) / (P_truth sqrt(2/N_modes))``,
   i.e. the emulator bias in units of the Gaussian sample variance of a single
   slice. ``1/significance^2`` is the number of independent slices an observer
   must average before the bias equals their statistical error.
+* **global-history bias** ``<x_HI,pred> - <x_HI,truth>`` per redshift.
 
 dT_b uses the saturated-spin-temperature limit without redshift-space
 distortions and the *same* density for truth and prediction, so differences
@@ -46,13 +47,12 @@ class ObservableMetrics(Metric):
         self._binner = None
         self.xhi_edges = np.linspace(*settings.xhi_range, settings.xhi_bins + 1)
         self.dtb_edges = np.linspace(*settings.dtb_range_mk, settings.dtb_bins + 1)
-        self.xbar_edges = np.linspace(0.0, 1.0, 20 + 1)
+        self.xbar_edges = np.linspace(0.0, 1.0, 21)
 
     def _bins(self, nx, ny, box):
         key = (nx, ny, round(box, 9), self.settings.n_k_bins)
         if self._binner is None or self._binner[0] != key:
-            binner = KBinner(nx, ny, box, self.settings.n_k_bins)
-            self._binner = (key, binner)
+            self._binner = (key, KBinner(nx, ny, box, self.settings.n_k_bins))
         return self._binner[1]
 
     def update(self, sample, prediction, aux=None, runtime=None):
@@ -72,11 +72,10 @@ class ObservableMetrics(Metric):
         dtb_truth = brightness_temperature_mk(truth, density, z, **cosmology)
         dtb_pred = brightness_temperature_mk(pred, density, z, **cosmology)
 
+        xbar_truth = truth.mean(axis=(0, 1))
+        xbar_pred = pred.mean(axis=(0, 1))
         masks = stage_masks(
-            truth.mean(axis=(0, 1)),
-            self.settings.stage_edges,
-            self.settings.active_range,
-        )
+            xbar_truth, self.settings.stage_edges, self.settings.active_range)
         power_t = binner.slice_sums(truth - truth.mean(axis=(0, 1), keepdims=True))
         power_p = binner.slice_sums(pred - pred.mean(axis=(0, 1), keepdims=True))
         power_dt = binner.slice_sums(
@@ -89,11 +88,13 @@ class ObservableMetrics(Metric):
         scale = k ** 2 / (2 * np.pi)
         moments_truth = slice_moments(dtb_truth)
         moments_pred = slice_moments(dtb_pred)
+        target_index = [int(np.argmin(np.abs(np.log(k) - np.log(t))))
+                        for t in self.settings.k_targets]
 
         stages = []
         for mask in masks:
             n = int(mask.sum())
-            if n == 0:
+            if n < self.settings.min_stage_slices:
                 stages.append(None)
                 continue
             xhi_hist_t, _ = np.histogram(
@@ -108,19 +109,17 @@ class ObservableMetrics(Metric):
             dtb_hist_p, _ = np.histogram(
                 np.clip(dtb_pred[:, :, mask], self.dtb_edges[0], self.dtb_edges[-1]),
                 bins=self.dtb_edges)
-
             with np.errstate(invalid="ignore", divide="ignore"):
-                sigma_t = power_dt[mask] * np.sqrt(2.0 / counts)[None, :]
-                significance = (power_dp[mask] - power_dt[mask]) / sigma_t
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", RuntimeWarning)
-                    sig_median = np.nanmedian(significance, axis=0)
-
-            denominator = n * counts
-            with np.errstate(invalid="ignore", divide="ignore"):
-                mean_pt = power_t[mask].sum(axis=0) / denominator
-                mean_pp = power_p[mask].sum(axis=0) / denominator
-                ratio = np.where(mean_pt > 0, mean_pp / mean_pt, np.nan)
+                sig_xhi = _significance(power_t[mask], power_p[mask], counts)
+                sig_dtb = _significance(power_dt[mask], power_dp[mask], counts)
+                denominator = n * counts
+                d2t = scale * power_dt[mask].sum(axis=0) / denominator
+                d2p = scale * power_dp[mask].sum(axis=0) / denominator
+                d2_ratio = np.where(d2t > 0, d2p / d2t, np.nan)
+                xhi_ratio = np.where(
+                    power_t[mask].sum(axis=0) > 0,
+                    power_p[mask].sum(axis=0) / power_t[mask].sum(axis=0),
+                    np.nan)
             stages.append({
                 "n_slices": n,
                 "xhi_hist_truth": xhi_hist_t.astype(np.float64),
@@ -137,12 +136,34 @@ class ObservableMetrics(Metric):
                 "variance_pred": float(np.mean(moments_pred["variance"][mask])),
                 "skewness_truth": float(np.nanmean(moments_truth["skewness"][mask])),
                 "skewness_pred": float(np.nanmean(moments_pred["skewness"][mask])),
-                "d2_ratio": ratio,
-                "significance": sig_median,
-                "d2_truth": scale * mean_pt,
-                "d2_pred": scale * mean_pp,
+                "d2_truth": d2t,
+                "d2_pred": d2p,
+                "d2_ratio": d2_ratio,
+                "xhi_ratio": xhi_ratio,
+                "sig_xhi": sig_xhi,
+                "sig_dtb": sig_dtb,
             })
-        self.rows.append({"sample": sample.id, "stages": stages})
+        self.rows.append({
+            "sample": sample.id,
+            "stages": stages,
+            "target_index": target_index,
+            "xbar_truth": xbar_truth,
+            "xbar_pred": xbar_pred,
+            "xbar_var_truth": _xbar_mean(moments_truth["variance"], xbar_truth,
+                                         self.xbar_edges),
+            "xbar_var_pred": _xbar_mean(moments_pred["variance"], xbar_truth,
+                                        self.xbar_edges),
+            "xbar_skew_truth": _xbar_mean(moments_truth["skewness"], xbar_truth,
+                                          self.xbar_edges),
+            "xbar_skew_pred": _xbar_mean(moments_pred["skewness"], xbar_truth,
+                                         self.xbar_edges),
+            "xbar_d2_truth": _xbar_mean(
+                _per_slice_d2(power_dt, counts, scale[target_index[0]]),
+                xbar_truth, self.xbar_edges),
+            "xbar_d2_pred": _xbar_mean(
+                _per_slice_d2(power_dp, counts, scale[target_index[0]]),
+                xbar_truth, self.xbar_edges),
+        })
 
     def result(self):
         if not self.rows:
@@ -164,25 +185,26 @@ class ObservableMetrics(Metric):
         partial_p = gather("partial_pred")
         variance_ratio = gather("variance_pred") / gather("variance_truth")
         skew_delta = gather("skewness_pred") - gather("skewness_truth")
-        significance = np.full((len(self.rows), n_rows), np.nan)
-        d2_ratio = np.full((len(self.rows), n_rows, len(self.settings.k_targets)), np.nan)
+        significance = _gather_reduced(self.rows, "sig_dtb", n_rows)
+        xhi_significance = _gather_reduced(self.rows, "sig_xhi", n_rows)
         k = self._binner[1].centers
-        target_index = [int(np.argmin(np.abs(np.log(k) - np.log(t))))
-                        for t in self.settings.k_targets]
+        targets = self.rows[0]["target_index"]
+        d2_ratio = np.full((len(self.rows), n_rows, len(targets)), np.nan)
+        xhi_ratio = np.full_like(d2_ratio, np.nan)
         for i, row in enumerate(self.rows):
             for j, stage in enumerate(row["stages"]):
                 if stage is None:
                     continue
-                significance[i, j] = float(nanmedian(np.abs(stage["significance"])))
-                d2_ratio[i, j] = stage["d2_ratio"][target_index]
+                d2_ratio[i, j] = stage["d2_ratio"][targets]
+                xhi_ratio[i, j] = stage["xhi_ratio"][targets]
 
         stages = []
         for j, label in enumerate(labels):
             stages.append({
                 "label": label,
-                "n_slices": int(np.nansum(
-                    [r["stages"][j]["n_slices"] for r in self.rows
-                     if r["stages"][j] is not None])),
+                "n_slices": int(np.nansum([
+                    r["stages"][j]["n_slices"] for r in self.rows
+                    if r["stages"][j] is not None])),
                 "w1_xhi": _f(nanmedian(w1_xhi[:, j])),
                 "w1_dtb_mk": _f(nanmedian(w1_dtb[:, j])),
                 "partial_fraction_truth": _f(nanmedian(partial_t[:, j])),
@@ -191,21 +213,38 @@ class ObservableMetrics(Metric):
                     nanmedian(partial_p[:, j] - partial_t[:, j])),
                 "dtb_variance_ratio": _f(nanmedian(variance_ratio[:, j])),
                 "dtb_skewness_delta": _f(nanmedian(skew_delta[:, j])),
-                "power_bias_significance": _f(nanmedian(significance[:, j])),
-                "delta2_ratio": [_f(nanmedian(d2_ratio[:, j, t]))
-                                 for t in range(len(target_index))],
-                "delta2_k_targets": [float(k[t]) for t in target_index],
+                "power_bias_significance_dtb": _f(
+                    nanmedian(np.abs(significance[:, j]))),
+                "power_bias_significance_xhi": _f(
+                    nanmedian(np.abs(xhi_significance[:, j]))),
+                "delta2_dtb_ratio": [_f(nanmedian(d2_ratio[:, j, t]))
+                                     for t in range(len(targets))],
+                "delta2_xhi_ratio": [_f(nanmedian(xhi_ratio[:, j, t]))
+                                     for t in range(len(targets))],
+                "k_targets": [float(k[t]) for t in targets],
             })
         active = stages[-1]
+        dxbar = np.array([row["xbar_pred"] - row["xbar_truth"]
+                          for row in self.rows])
+        dxbar_med, dxbar_lo, dxbar_hi = _band(dxbar)
         return {
             "stage_labels": labels,
             "stages": stages,
+            "dxbar": {
+                "med": _f(dxbar_med),
+                "p16": _f(dxbar_lo),
+                "p84": _f(dxbar_hi),
+                "abs_max": _f(np.nanmax(np.abs(dxbar))) if dxbar.size else None,
+            },
             "active": {
                 "w1_xhi": active["w1_xhi"],
                 "w1_dtb_mk": active["w1_dtb_mk"],
                 "partial_fraction_excess": active["partial_fraction_excess"],
                 "dtb_variance_ratio": active["dtb_variance_ratio"],
-                "power_bias_significance": active["power_bias_significance"],
+                "power_bias_significance_dtb":
+                    active["power_bias_significance_dtb"],
+                "power_bias_significance_xhi":
+                    active["power_bias_significance_xhi"],
             },
             "skipped_samples": self.skipped,
             "n_samples": len(self.rows),
@@ -215,7 +254,8 @@ class ObservableMetrics(Metric):
         if not self.rows:
             return {}
         out = {"observable_xhi_edges": self.xhi_edges,
-               "observable_dtb_edges": self.dtb_edges}
+               "observable_dtb_edges": self.dtb_edges,
+               "observable_xbar_edges": self.xbar_edges}
         labels = stage_labels(self.settings.stage_edges, self.settings.active_range)
         for j, label in enumerate(labels):
             token = label.replace(" ", "_").replace("-", "_").replace(".", "p")
@@ -228,7 +268,68 @@ class ObservableMetrics(Metric):
                     mass = total.sum()
                     out[f"observable_{key}_{token}"] = (
                         total / mass if mass > 0 else total)
+            for key in ("d2_truth", "d2_pred", "d2_ratio", "xhi_ratio",
+                        "sig_xhi", "sig_dtb"):
+                rows = [r["stages"][j][key] for r in self.rows
+                        if r["stages"][j] is not None]
+                if rows:
+                    out[f"observable_{key}_{token}"] = np.stack(rows)
+        for key in ("xbar_var", "xbar_skew", "xbar_d2"):
+            for which in ("truth", "pred"):
+                rows = [r[f"{key}_{which}"] for r in self.rows
+                        if r[f"{key}_{which}"] is not None]
+                if rows:
+                    out[f"observable_{key}_{which}"] = np.stack(rows)
+        out["observable_xbar_truth"] = np.stack(
+            [r["xbar_truth"] for r in self.rows])
+        out["observable_xbar_pred"] = np.stack(
+            [r["xbar_pred"] for r in self.rows])
         return out
+
+
+def _gather_reduced(rows, key, n_rows):
+    """Per-stage scalar: median over wavenumbers of each stage vector."""
+    out = np.full((len(rows), n_rows), np.nan)
+    for i, row in enumerate(rows):
+        for j, stage in enumerate(row["stages"]):
+            if stage is not None:
+                out[i, j] = nanmedian(stage[key])
+    return out
+
+
+def _significance(sum_truth, sum_pred, counts):
+    """Power bias in units of single-slice Gaussian sample variance."""
+    with np.errstate(invalid="ignore", divide="ignore"):
+        sigma = sum_truth * np.sqrt(2.0 / counts)[None, :]
+        values = (sum_pred - sum_truth) / sigma
+    values[~(sum_truth > 0) | ~np.isfinite(values)] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmedian(values, axis=0)
+
+
+def _per_slice_d2(power, counts, scale):
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(counts[None, :] > 0, scale * power / counts, np.nan)
+
+
+def _xbar_mean(per_slice, xbar, edges):
+    index = np.clip(np.digitize(xbar, edges) - 1, 0, len(edges) - 2)
+    out = np.full(len(edges) - 1, np.nan)
+    with warnings.catch_warnings(), np.errstate(all="ignore"):
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for b in range(len(edges) - 1):
+            select = index == b
+            if select.any():
+                out[b] = np.nanmean(per_slice[select])
+    return out
+
+
+def _band(values):
+    with warnings.catch_warnings(), np.errstate(all="ignore"):
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return (np.nanmedian(values), np.nanpercentile(values, 16),
+                np.nanpercentile(values, 84))
 
 
 def _f(value):

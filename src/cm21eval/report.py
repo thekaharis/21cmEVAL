@@ -93,6 +93,34 @@ def write(directory, models, dataset_info: dict, settings: dict,
             arrays[f"{model.name}__{key}"] = value
     if arrays:
         np.savez(directory / "curves.npz", **arrays)
+    elif (directory / "curves.npz").exists():
+        (directory / "curves.npz").unlink()
+
+    stage_rows = []
+    for model in models:
+        for metric_name, result in model.metrics.items():
+            if not isinstance(result, dict):
+                continue
+            for list_key in ("stages", "chunks"):
+                for index, entry in enumerate(result.get(list_key) or []):
+                    if not isinstance(entry, dict):
+                        continue
+                    label = entry.get("label", entry.get("z", index))
+                    for key, value in flatten(entry).items():
+                        if key in {"label", "k_targets", "delta2_k_targets",
+                                   "kperp_centers", "kpar_centers"}:
+                            continue
+                        stage_rows.append({
+                            "model": model.name, "metric": metric_name,
+                            "group": list_key, "stage": label,
+                            "key": key, "value": value,
+                        })
+    if stage_rows:
+        keys = list(stage_rows[0])
+        with open(directory / "stages.csv", "w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(stage_rows)
 
     (directory / "report.md").write_text(
         render_markdown(models, dataset_info, settings, title))
@@ -120,11 +148,15 @@ HEADLINE = (
 def render_markdown(models, dataset_info: dict, settings: dict,
                     title: str = "21cmEVAL report") -> str:
     lines = [f"# {title}", ""]
+    box = dataset_info.get("box_mpc")
+    box = settings.get("box_mpc") if box is None else box
+    evaluated = models[0].n_samples if models else dataset_info.get("n_samples", "?")
+    total = dataset_info.get("n_total")
+    scope = (f"{evaluated} of {total} samples" if total
+             else f"{evaluated} samples")
     lines.append(
         f"Created {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · "
-        f"{dataset_info.get('n_samples', '?')} samples · "
-        f"shape {dataset_info.get('shape')} · "
-        f"box {dataset_info.get('box_mpc', settings.get('box_mpc'))} Mpc")
+        f"{scope} · shape {dataset_info.get('shape')} · box {box} Mpc")
     lines.append("")
 
     columns = [(label, path, fmt) for label, path, fmt in HEADLINE
@@ -196,7 +228,20 @@ def _format(value) -> str:
         if value != 0 and (abs(value) < 1e-3 or abs(value) >= 1e4):
             return f"{value:.3e}"
         return f"{value:.4g}"
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
     if isinstance(value, (list, tuple)):
+        if len(value) > 5:
+            try:
+                array = np.asarray(value, dtype=float)
+            except (TypeError, ValueError):
+                return f"[{len(value)} values]"
+            finite = array[np.isfinite(array)]
+            if finite.size == 0:
+                return "—"
+            return (f"med {_format(float(np.median(finite)))} "
+                    f"[{_format(float(finite.min()))}, "
+                    f"{_format(float(finite.max()))}]")
         return "[" + ", ".join(_format(v) for v in value) + "]"
     return str(value)
 

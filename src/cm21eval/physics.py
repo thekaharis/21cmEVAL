@@ -539,11 +539,15 @@ def trace_rays_to_neutral_2d(
     return distances
 
 
-def neutral_region_summary(field, threshold: float = 0.5) -> dict:
-    """Connected-component summary of the neutral (``field >= threshold``) mask."""
+def ionized_region_summary(field, threshold: float = 0.5) -> dict:
+    """Connected-component summary of the ionized (``field < threshold``) mask.
+
+    This is the polarity used by ``fno-21cm``: the objects of interest are
+    ionized bubbles embedded in the neutral IGM.
+    """
     from scipy import ndimage
 
-    labels, count = ndimage.label(np.asarray(field) >= threshold)
+    labels, count = ndimage.label(np.asarray(field) < threshold)
     volumes = np.bincount(labels.ravel())[1:].astype(np.float64)
     if volumes.size == 0:
         return {"count": 0, "mean_effective_radius_cells": 0.0,
