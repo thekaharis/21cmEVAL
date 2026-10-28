@@ -457,14 +457,13 @@ def mean_free_path_samples_2d(
     chosen = cells[rng.integers(0, len(cells), size=n_rays)]
     offsets = rng.random((n_rays, 2))
     angles = rng.uniform(0.0, 2.0 * np.pi, size=n_rays)
-    distances = np.empty(n_rays, dtype=np.float64)
-    for index in range(n_rays):
-        start = chosen[index].astype(np.float64) + offsets[index]
-        direction = (np.cos(angles[index]), np.sin(angles[index]))
-        distances[index] = trace_ray_to_neutral_2d(
-            mask, (float(start[0]), float(start[1])), direction,
-            cell_size_mpc, max_distance_mpc,
-        )
+    distances = trace_rays_to_neutral_2d(
+        mask,
+        chosen.astype(np.float64) + offsets,
+        np.stack([np.cos(angles), np.sin(angles)], axis=1),
+        cell_size_mpc,
+        float(max_distance_mpc),
+    )
     hit = np.isfinite(distances)
     return {
         "distances_mpc": distances[hit],
@@ -474,6 +473,70 @@ def mean_free_path_samples_2d(
         "n_censored": int((~hit).sum()),
         "ionized_fraction": float(mask.mean()),
     }
+
+
+def trace_rays_to_neutral_2d(
+    mask: np.ndarray,
+    starts: np.ndarray,
+    directions: np.ndarray,
+    cell_size_mpc: tuple[float, float],
+    max_distance: float,
+) -> np.ndarray:
+    """Vectorised DDA for many rays at once.
+
+    Same geometry and tie handling as :func:`trace_ray_to_neutral_2d`; all
+    rays advance together, one cell boundary per iteration. This is what makes
+    a 200-cone bubble-size evaluation tractable: the scalar tracer costs one
+    Python step per boundary per ray.
+    """
+    nx, ny = mask.shape
+    dx, dy = (float(value) for value in cell_size_mpc)
+    sx = np.mod(starts[:, 0], nx)
+    sy = np.mod(starts[:, 1], ny)
+    ux, uy = directions[:, 0], directions[:, 1]
+    norm = np.hypot(ux, uy)
+    ux, uy = ux / norm, uy / norm
+    vx, vy = ux / dx, uy / dy
+
+    ix = np.floor(sx).astype(np.int64)
+    iy = np.floor(sy).astype(np.int64)
+    if not np.all(mask[ix, iy]):
+        raise ValueError("every ray must start inside an ionized cell")
+
+    step_x = np.sign(vx).astype(np.int64)
+    step_y = np.sign(vy).astype(np.int64)
+    with np.errstate(divide="ignore"):
+        delta_x = np.where(vx != 0, 1.0 / np.abs(vx), np.inf)
+        delta_y = np.where(vy != 0, 1.0 / np.abs(vy), np.inf)
+    next_x = np.where(
+        vx > 0, (ix + 1.0 - sx) / np.where(vx > 0, vx, 1.0),
+        np.where(vx < 0, (sx - ix) / np.where(vx < 0, -vx, 1.0), np.inf))
+    next_y = np.where(
+        vy > 0, (iy + 1.0 - sy) / np.where(vy > 0, vy, 1.0),
+        np.where(vy < 0, (sy - iy) / np.where(vy < 0, -vy, 1.0), np.inf))
+
+    distances = np.full(len(sx), np.nan)
+    active = np.ones(len(sx), dtype=bool)
+    max_steps = int(np.ceil(2.0 * max_distance / min(dx, dy))) + 8
+    for _ in range(max_steps):
+        if not active.any():
+            break
+        distance = np.minimum(next_x, next_y)
+        beyond = active & (distance > max_distance)
+        active[beyond] = False
+        if not active.any():
+            break
+        tolerance = 1e-12 * np.maximum(1.0, distance)
+        advance_x = active & (next_x <= distance + tolerance)
+        advance_y = active & (next_y <= distance + tolerance)
+        ix[advance_x] = (ix[advance_x] + step_x[advance_x]) % nx
+        iy[advance_y] = (iy[advance_y] + step_y[advance_y]) % ny
+        next_x[advance_x] += delta_x[advance_x]
+        next_y[advance_y] += delta_y[advance_y]
+        hit = active & ~mask[ix, iy]
+        distances[hit] = distance[hit]
+        active[hit] = False
+    return distances
 
 
 def neutral_region_summary(field, threshold: float = 0.5) -> dict:

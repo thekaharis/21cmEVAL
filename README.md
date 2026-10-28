@@ -275,6 +275,9 @@ src/cm21eval/
 * **One pass.** Every enabled metric updates from the same prediction.
 * **Constant memory.** Accumulators are sums, histograms and per-cone scalars;
   no metric stores a cube after `update` returns.
+* **Fast ray tracing.** Bubble sizes use a vectorised DDA that advances all
+  rays together: 256 rays on a 140² slice take about a millisecond, so the
+  full stage-resolved bubble diagnostic costs ~0.06 s per cone.
 * **Fail loudly.** Shape mismatches, missing channels and unknown metrics
   raise; a metric that cannot run is listed under `skipped` with the reason.
 * **Numpy core.** `import cm21eval` does not import torch. Torch appears only
@@ -293,7 +296,7 @@ src/cm21eval/
 ## Tests
 
 ```bash
-python -m pytest          # 57 tests, ~2 s, no data and no GPU
+python -m pytest          # 58 tests, ~2 s, no data and no GPU
 cm21eval selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code

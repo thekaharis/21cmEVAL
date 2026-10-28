@@ -85,6 +85,24 @@ def test_ray_tracer_censored():
     assert np.isnan(distance)
 
 
+def test_vectorised_ray_tracer_matches_scalar():
+    rng = np.random.default_rng(5)
+    mask = rng.random((64, 64)) > 0.45
+    cells = np.argwhere(mask)
+    starts = cells[rng.integers(0, len(cells), size=80)].astype(float) + rng.random((80, 2))
+    angles = rng.uniform(0, 2 * np.pi, size=80)
+    directions = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+    vector = physics.trace_rays_to_neutral_2d(
+        mask, starts, directions, (1.5, 1.5), 200.0)
+    scalar = np.array([
+        physics.trace_ray_to_neutral_2d(
+            mask, (float(s[0]), float(s[1])), (float(d[0]), float(d[1])),
+            (1.5, 1.5), 200.0)
+        for s, d in zip(starts, directions)
+    ])
+    assert np.array_equal(vector, scalar, equal_nan=True)
+
+
 def test_mfp_distribution_mean_half_plane():
     mask = np.zeros((64, 64), dtype=bool)
     mask[:32, :] = True
