@@ -34,7 +34,8 @@ class NpzDataset(BaseDataset):
     def __init__(self, path, target: str = "xhi", density: str = "density",
                  split: str | None = None, limit: int | None = None,
                  default_omega_m: float | None = None,
-                 indices: list[int] | None = None):
+                 indices: list[int] | None = None,
+                 box_mpc: float | None = None):
         super().__init__(split=split, limit=limit, indices=indices)
         self.path = Path(path).expanduser().resolve()
         if not self.path.exists():
@@ -42,6 +43,7 @@ class NpzDataset(BaseDataset):
         self.target = target
         self.density = density
         self.default_omega_m = default_omega_m
+        self.default_box_mpc = box_mpc
         self._manifest = None
         if self.path.is_dir():
             self.root = self.path
@@ -80,7 +82,8 @@ class NpzDataset(BaseDataset):
 
     def _from_manifest(self, manifest: dict) -> list[Sample]:
         default_z = manifest.get("z_grid")
-        default_box = manifest.get("box_mpc")
+        default_box = (self.default_box_mpc if self.default_box_mpc is not None
+                       else manifest.get("box_mpc"))
         default_omega = manifest.get("omega_m", self.default_omega_m)
         inputs = manifest.get("inputs")
         target = manifest.get("target", self.target)
@@ -91,7 +94,8 @@ class NpzDataset(BaseDataset):
                 "id": entry.get("id", path.stem),
                 "split": entry.get("split"),
                 "z_grid": entry.get("z_grid", default_z),
-                "box_mpc": entry.get("box_mpc", default_box),
+                "box_mpc": (self.default_box_mpc if self.default_box_mpc is not None
+                            else entry.get("box_mpc", default_box)),
                 "omega_m": entry.get("omega_m", default_omega),
                 "params": entry.get("params", {}),
                 "inputs": entry.get("inputs", inputs),
@@ -128,6 +132,8 @@ class NpzDataset(BaseDataset):
         if z_grid is None and "z" in arrays and np.asarray(arrays["z"]).ndim == 1:
             z_grid = arrays["z"]
         box = context.get("box_mpc")
+        if box is None and self.default_box_mpc is not None:
+            box = self.default_box_mpc
         if box is None:
             box = float(arrays["box_mpc"]) if "box_mpc" in arrays else None
         omega = context.get("omega_m")
@@ -172,6 +178,7 @@ class NpzDataset(BaseDataset):
             counts[key] = counts.get(key, 0) + 1
         return {
             "format": "npz",
+            "path": str(self.path),
             "root": str(self.root),
             "n_total": len(samples),
             "n_samples": len(visible),

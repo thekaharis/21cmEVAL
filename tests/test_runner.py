@@ -126,6 +126,22 @@ def test_flatten_keeps_numpy_scalars():
     assert flat == {"a": 1.5, "b": 3, "c": True}
 
 
+def test_geometry_check_is_refreshed_after_run():
+    class LateGeometry:
+        verified = False
+
+        def predict(self, sample):
+            self.verified = True
+            return {"xhi": np.full_like(sample.targets["xhi"], 0.5)}
+
+        def describe(self):
+            return {"geometry_check": "verified" if self.verified
+                    else "unverified"}
+
+    result = evaluate(LateGeometry(), dataset(1), SMALL, ["voxel"])
+    assert result.info["geometry_check"] == "verified"
+
+
 def test_expect_shape_is_enforced():
     with pytest.raises(ValueError, match="expected spatial shape"):
         evaluate(SmoothThresholdModel(), dataset(1), SMALL, ["voxel"],

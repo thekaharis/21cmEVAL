@@ -124,8 +124,9 @@ without the flag the 512-slice cache is still accepted, with a warning. The
 metadata does not record which simulation family a cache came from, so two
 caches with identical shape cannot be distinguished automatically. If
 `run_metadata.json` records `dataset.cache_file`, `cache_rows` or
-`cache_shape`, the CLI enforces it before inference; recording `cache_file` at
-training time makes the binding complete.
+`cache_shape`, the CLI enforces it before inference; a recorded `cache_sha256`
+is verified by hashing the cache (slow for a 265 GB file). Recording
+`cache_file` at training time makes the binding complete.
 
 An HDF5 cache does not declare train/val/test splits, so `--split test` is
 rejected instead of scoring every row. Use `--indices 0-199` for explicit row
@@ -331,7 +332,7 @@ src/cm21eval/
 ## Tests
 
 ```bash
-python -m pytest          # 88 tests, ~2 s, no data and no GPU
+python -m pytest          # 92 tests, ~2 s, no data and no GPU
 cm21eval selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code

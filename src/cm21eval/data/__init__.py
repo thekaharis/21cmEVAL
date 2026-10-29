@@ -34,7 +34,8 @@ def open_data(spec: str, target: str = "xhi", density: str = "density",
                            indices=indices, **kwargs)
     if prefix in {"npz", "np"}:
         return NpzDataset(argument, target=target, density=density,
-                          split=split, limit=limit, indices=indices, **kwargs)
+                          split=split, limit=limit, indices=indices,
+                          box_mpc=box_mpc, **kwargs)
 
     path = Path(spec).expanduser()
     if path.suffix.lower() in {".h5", ".hdf5"}:
@@ -42,4 +43,5 @@ def open_data(spec: str, target: str = "xhi", density: str = "density",
                            split=split, limit=limit, box_mpc=box_mpc,
                            indices=indices, **kwargs)
     return NpzDataset(spec, target=target, density=density,
-                      split=split, limit=limit, indices=indices, **kwargs)
+                      split=split, limit=limit, indices=indices,
+                      box_mpc=box_mpc, **kwargs)

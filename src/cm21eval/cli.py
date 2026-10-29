@@ -62,6 +62,7 @@ def main(argv=None) -> int:
     describe.add_argument("--data", required=True)
     describe.add_argument("--target", default="xhi")
     describe.add_argument("--limit", type=int, default=3)
+    describe.add_argument("--box-mpc", type=float, default=None)
 
     list_metrics = sub.add_parser("list-metrics", help="list registered metrics")
     list_metrics.add_argument("--json", action="store_true")
@@ -203,7 +204,8 @@ def _run(args) -> int:
 
 
 def _describe(args) -> int:
-    dataset = open_data(args.data, target=args.target, limit=args.limit)
+    dataset = open_data(args.data, target=args.target, limit=args.limit,
+                        box_mpc=args.box_mpc)
     print(json.dumps(dataset.describe(), indent=2))
     return 0
 

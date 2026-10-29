@@ -144,6 +144,28 @@ def test_cache_contract_validation(tmp_path):
                                 tmp_path / "best.pt")
 
 
+def test_cache_sha256_is_enforced(tmp_path):
+    import hashlib
+
+    from cm21eval.adapters.fno21cm import validate_cache_contract
+
+    path = tmp_path / "cache.h5"
+    path.write_bytes(b"cubes")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    info = {"path": str(path)}
+    validate_cache_contract(
+        {"dataset": {"cache_file": str(path), "cache_sha256": digest}},
+        info, tmp_path / "best.pt")
+    with pytest.raises(ValueError, match="hashes"):
+        validate_cache_contract(
+            {"dataset": {"cache_file": str(path), "cache_sha256": "0" * 64}},
+            info, tmp_path / "best.pt")
+    with pytest.raises(ValueError, match="records cache"):
+        validate_cache_contract(
+            {"dataset": {"cache_file": str(tmp_path / "wrong.h5")}},
+            info, tmp_path / "best.pt")
+
+
 def test_density_scale_helper():
     from cm21eval.adapters.fno21cm import cache_contract
 

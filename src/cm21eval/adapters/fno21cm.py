@@ -195,6 +195,13 @@ class Fno21cmAdapter(BaseAdapter):
             "density_scale": self.density_scale,
             "cache_contract": cache_contract(self.metadata),
             "geometry_check": self.geometry_check,
+            "expected_shape": (list(self.expect_shape or self.spatial_shape)
+                               if (self.expect_shape or self.spatial_shape)
+                               else None),
+            "geometry_source": ("--expect-shape" if self.expect_shape
+                                else ("run_metadata.json "
+                                      "input_features.spatial_shape"
+                                      if self.spatial_shape else None)),
             "model_kind": (self.metadata.get("model_config") or {}).get("kind"),
         })
         return info
@@ -235,6 +242,16 @@ def cache_contract(metadata: dict) -> dict | None:
     return contract or None
 
 
+def _file_sha256(path: Path, chunk: int = 1 << 24) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(chunk), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def validate_cache_contract(metadata: dict, dataset_info: dict,
                             checkpoint: str | Path) -> None:
     """Fail when a run's recorded cache identity does not match the data."""
@@ -242,12 +259,20 @@ def validate_cache_contract(metadata: dict, dataset_info: dict,
     if not contract:
         return
     declared = contract.get("cache_file") or contract.get("cache_path")
-    actual = dataset_info.get("path")
-    if declared and actual and Path(str(declared)).name != Path(str(actual)).name:
-        raise ValueError(
-            f"checkpoint {Path(checkpoint).name} records cache "
-            f"{Path(str(declared)).name!r}, but the dataset is "
-            f"{Path(str(actual)).name!r}")
+    actual = dataset_info.get("path") or dataset_info.get("root")
+    if declared and actual:
+        declared_path = Path(str(declared))
+        actual_path = Path(str(actual))
+        if declared_path.is_absolute():
+            if declared_path.resolve() != actual_path.resolve():
+                raise ValueError(
+                    f"checkpoint {Path(checkpoint).name} records cache "
+                    f"{declared_path}, but the dataset is {actual_path}")
+        elif declared_path.name != actual_path.name:
+            raise ValueError(
+                f"checkpoint {Path(checkpoint).name} records cache "
+                f"{declared_path.name!r}, but the dataset is "
+                f"{actual_path.name!r}")
     if ("cache_rows" in contract and dataset_info.get("n_total") is not None
             and int(contract["cache_rows"]) != int(dataset_info["n_total"])):
         raise ValueError(
@@ -260,6 +285,21 @@ def validate_cache_contract(metadata: dict, dataset_info: dict,
         raise ValueError(
             f"checkpoint {Path(checkpoint).name} records cache shape "
             f"{contract['cache_shape']}, dataset has {dataset_info['shape']}")
+    if "cache_sha256" in contract:
+        if not actual:
+            raise ValueError(
+                f"checkpoint {Path(checkpoint).name} records cache_sha256, "
+                "but the dataset exposes no path to hash")
+        actual_path = Path(str(actual))
+        if not actual_path.is_file():
+            raise ValueError(
+                f"cache_sha256 verification needs a file, got {actual_path}")
+        digest = _file_sha256(actual_path)
+        if digest.lower() != str(contract["cache_sha256"]).lower():
+            raise ValueError(
+                f"checkpoint {Path(checkpoint).name} records cache_sha256 "
+                f"{contract['cache_sha256']}, but {actual_path.name} hashes "
+                f"to {digest}")
 
 
 def _normalize(metadata: dict, name: str, value: float) -> float:

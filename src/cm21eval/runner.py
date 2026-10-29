@@ -118,6 +118,18 @@ def evaluate(adapter, dataset, settings: Settings,
                 if callable(observe):
                     observe(stats)
 
+        # Re-read the adapter description after the pass: geometry checks run
+        # on the first sample and would otherwise be serialized as unverified.
+        if hasattr(adapter, "describe"):
+            post = adapter.describe()
+            if isinstance(post, dict):
+                info = {**info, **post}
+        if expect_shape is not None:
+            info["expected_shape"] = list(expect_shape)
+            if info.get("geometry_check") in {None, "unverified"}:
+                info["geometry_check"] = "verified (--expect-shape)"
+            info.setdefault("geometry_source", "--expect-shape")
+
         arrays = {}
         for metric in usable:
             for key, value in metric.arrays().items():

@@ -61,6 +61,18 @@ def test_manifest_dataset(tmp_path):
     assert len(limited) == 1
 
 
+def test_npz_box_override(tmp_path):
+    write_cube(tmp_path / "a.npz")
+    dataset = NpzDataset(tmp_path, box_mpc=250.0)
+    assert next(iter(dataset)).meta.box_mpc == 250.0
+
+
+def test_npz_describe_exposes_path(tmp_path):
+    write_cube(tmp_path / "a.npz")
+    info = NpzDataset(tmp_path).describe()
+    assert info["path"] == str(tmp_path.resolve())
+
+
 def test_missing_density_is_tolerated(tmp_path):
     write_cube(tmp_path / "a.npz", with_density=False)
     sample = next(iter(NpzDataset(tmp_path)))
