@@ -34,7 +34,10 @@ class Fno21cmAdapter(BaseAdapter):
                  device: str | None = None, target: str = "xhi"):
         import torch
 
-        checkpoint = Path(checkpoint).expanduser().resolve()
+        # Keep the path as given: a checkpoint may be symlinked into a run
+        # directory whose own run_metadata.json is the contract. Resolving the
+        # link would silently read the target directory's metadata instead.
+        checkpoint = Path(checkpoint).expanduser()
         if not checkpoint.exists():
             raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
         root = Path(project_root).expanduser().resolve() if project_root else None
@@ -45,7 +48,7 @@ class Fno21cmAdapter(BaseAdapter):
         from util.run_metadata import load_run_metadata
         from viz.visualize_3d import load_model
 
-        metadata = load_run_metadata(checkpoint.parent) or {}
+        metadata = load_run_metadata(metadata_directory(checkpoint)) or {}
         features = metadata.get("input_features", {})
         channels = tuple(features.get("channel_names") or ("density/10", "1/(1+z)"))
         in_channels = features.get("in_channels") or len(channels)
@@ -61,6 +64,9 @@ class Fno21cmAdapter(BaseAdapter):
         self.in_channels = int(in_channels)
         shape = features.get("spatial_shape")
         self.spatial_shape = None if shape is None else tuple(int(v) for v in shape)
+        self.expect_shape: tuple[int, ...] | None = None
+        self.geometry_check = "verified" if self.spatial_shape else "unverified"
+        self._geometry_warned = False
         dataset = metadata.get("dataset") if isinstance(metadata.get("dataset"), dict) else {}
         self.density_scale = float(
             metadata.get("density_scale",
@@ -102,13 +108,28 @@ class Fno21cmAdapter(BaseAdapter):
         return np.stack(stack, axis=0)
 
     def _check_geometry(self, sample: Sample) -> None:
-        if self.spatial_shape is not None and tuple(sample.shape) != self.spatial_shape:
+        expected = self.expect_shape or self.spatial_shape
+        if expected is not None and tuple(sample.shape) != tuple(expected):
+            source = ("--expect-shape" if self.expect_shape
+                      else "run_metadata.json input_features.spatial_shape")
             raise ValueError(
-                f"checkpoint {self.checkpoint.name} was trained on spatial "
-                f"shape {self.spatial_shape}, but sample {sample.id!r} has "
+                f"checkpoint {self.checkpoint.name} expects spatial shape "
+                f"{tuple(expected)} ({source}), but sample {sample.id!r} has "
                 f"{tuple(sample.shape)}. This usually means the cube cache is "
                 f"the wrong one (e.g. a 512-slice envelope cache for a "
                 f"256-slice model); pass the cache recorded for this run.")
+        if expected is not None and tuple(sample.shape) == tuple(expected):
+            self.geometry_check = ("verified (--expect-shape)" if self.expect_shape
+                                   else "verified")
+        if expected is None and not self._geometry_warned:
+            self._geometry_warned = True
+            import warnings
+
+            warnings.warn(
+                f"{self.checkpoint.name}: run_metadata.json has no "
+                "input_features.spatial_shape, so the cache geometry cannot "
+                "be verified. Pass --expect-shape NX,NY,NZ (or --expect-nz N) "
+                "to enforce it.", stacklevel=2)
         channels = len(self.channels)
         if channels != self.in_channels:
             raise ValueError(
@@ -173,6 +194,7 @@ class Fno21cmAdapter(BaseAdapter):
             "in_channels": self.in_channels,
             "density_scale": self.density_scale,
             "cache_contract": cache_contract(self.metadata),
+            "geometry_check": self.geometry_check,
             "model_kind": (self.metadata.get("model_config") or {}).get("kind"),
         })
         return info
@@ -183,6 +205,16 @@ class Fno21cmAdapter(BaseAdapter):
         del self.model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+
+def metadata_directory(checkpoint) -> Path:
+    """Directory of run_metadata.json, following the path as given.
+
+    A symlinked checkpoint should use the metadata next to the link, not the
+    target's: copying a checkpoint into a run directory is a common way to
+    pin it to that run's split and cache contract.
+    """
+    return Path(checkpoint).expanduser().parent
 
 
 def cache_contract(metadata: dict) -> dict | None:

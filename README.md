@@ -38,6 +38,7 @@ cm21eval run \
     --indices-json /work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/run_metadata.json \
     --model fno=fno21cm:/work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/best_model_state_dict.pt \
     --fno-root /work/fno-21cm \
+    --expect-shape 140,140,256 \
     --limit 200 --out results/fno
 
 # 3. Compare several models in one pass over the data
@@ -112,8 +113,14 @@ still wants a GPU (see below).
 
 The fno-21cm adapter checks the checkpoint's recorded `spatial_shape` against
 every sample and refuses a mismatch. Scoring a 256-slice model against a
-512-slice envelope cache now fails with "checkpoint trained on spatial shape
-... but sample has ..." instead of producing a clean-looking 0.49 RMSE. The
+512-slice envelope cache fails with "checkpoint expects spatial shape ... but
+sample has ..." instead of producing a clean-looking 0.49 RMSE.
+
+Older 3-D checkpoints predate `input_features.spatial_shape`; for those the
+adapter warns that the geometry is unverified and the report records
+`geometry_check: unverified`. Pass `--expect-shape NX,NY,NZ` (or `--expect-nz
+N`) to enforce it explicitly. The cluster's `fno_fno` run is one of these:
+without the flag the 512-slice cache is still accepted, with a warning. The
 metadata does not record which simulation family a cache came from, so two
 caches with identical shape cannot be distinguished automatically. If
 `run_metadata.json` records `dataset.cache_file`, `cache_rows` or
@@ -324,7 +331,7 @@ src/cm21eval/
 ## Tests
 
 ```bash
-python -m pytest          # 84 tests, ~2 s, no data and no GPU
+python -m pytest          # 88 tests, ~2 s, no data and no GPU
 cm21eval selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code

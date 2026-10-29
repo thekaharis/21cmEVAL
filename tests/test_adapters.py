@@ -87,10 +87,44 @@ def test_fno_adapter_rejects_wrong_geometry(sample):
 
     adapter = object.__new__(Fno21cmAdapter)
     adapter.spatial_shape = (8, 8, 99)
+    adapter.expect_shape = None
+    adapter.geometry_check = "verified"
+    adapter._geometry_warned = False
     adapter.in_channels = 2
     adapter.channels = ("density/10", "1/(1+z)")
     adapter.checkpoint = Path("best.pt")
-    with pytest.raises(ValueError, match="trained on spatial shape"):
+    with pytest.raises(ValueError, match="expects spatial shape"):
+        adapter._check_geometry(sample)
+
+
+def test_metadata_directory_uses_link_location(tmp_path):
+    from cm21eval.adapters.fno21cm import metadata_directory
+
+    target = tmp_path / "runA"
+    target.mkdir()
+    checkpoint = target / "best.pt"
+    checkpoint.write_bytes(b"")
+    link_dir = tmp_path / "runB"
+    link_dir.mkdir()
+    link = link_dir / "best.pt"
+    link.symlink_to(checkpoint)
+    assert metadata_directory(link) == link_dir
+
+
+def test_unverified_geometry_warns(sample):
+    from pathlib import Path
+
+    from cm21eval.adapters.fno21cm import Fno21cmAdapter
+
+    adapter = object.__new__(Fno21cmAdapter)
+    adapter.spatial_shape = None
+    adapter.expect_shape = None
+    adapter.geometry_check = "unverified"
+    adapter._geometry_warned = False
+    adapter.in_channels = 1
+    adapter.channels = ("density/10",)
+    adapter.checkpoint = Path("old.pt")
+    with pytest.warns(UserWarning, match="cannot be verified"):
         adapter._check_geometry(sample)
 
 

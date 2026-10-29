@@ -176,7 +176,9 @@ class NpzDataset(BaseDataset):
             "n_total": len(samples),
             "n_samples": len(visible),
             "split": self.split,
-            "indices": None if self.indices is None else len(self.indices),
+            "indices": None if self.indices is None else len(visible),
+            "indices_requested": (None if self.indices is None
+                                  else len(self.indices)),
             "shape": list(first.shape) if first else None,
             "box_mpc": first.meta.box_mpc if first else None,
             "inputs": sorted(first.inputs) if first else [],

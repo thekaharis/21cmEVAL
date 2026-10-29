@@ -241,7 +241,9 @@ class Hdf5Dataset(BaseDataset):
             "n_total": index["n"],
             "n_samples": len(rows),
             "split": self.split,
-            "indices": None if self.indices is None else len(self.indices),
+            "indices": None if self.indices is None else len(rows),
+            "indices_requested": (None if self.indices is None
+                                  else len(self.indices)),
             "shape": list(index["shape"]),
             "box_mpc": index["box"],
             "z_range": None if z is None else [float(z[0]), float(z[-1])],

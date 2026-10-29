@@ -126,6 +126,26 @@ def test_flatten_keeps_numpy_scalars():
     assert flat == {"a": 1.5, "b": 3, "c": True}
 
 
+def test_expect_shape_is_enforced():
+    with pytest.raises(ValueError, match="expected spatial shape"):
+        evaluate(SmoothThresholdModel(), dataset(1), SMALL, ["voxel"],
+                 expect_shape=(99, 99, 99))
+
+
+def test_resolve_expect_shape():
+    from types import SimpleNamespace
+
+    from cm21eval.cli import _resolve_expect_shape
+
+    info = {"shape": [140, 140, 256]}
+    assert _resolve_expect_shape(
+        SimpleNamespace(expect_shape="140,140,512", expect_nz=None), info
+    ) == (140, 140, 512)
+    assert _resolve_expect_shape(
+        SimpleNamespace(expect_shape=None, expect_nz=512), info
+    ) == (140, 140, 512)
+
+
 def test_geometry_guard_checks_redshift_grid():
     shape = (12, 12, 4)
     first = Sample(

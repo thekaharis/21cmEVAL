@@ -34,7 +34,8 @@ class ModelResult:
 def evaluate(adapter, dataset, settings: Settings,
              metric_names: Iterable[str] = ("all",),
              metric_options: dict | None = None,
-             progress=None) -> ModelResult:
+             progress=None,
+             expect_shape: tuple[int, ...] | None = None) -> ModelResult:
     """Run one adapter over ``dataset`` and return per-metric results."""
     from .metrics import Metric  # noqa: F401  (registers built-ins)
 
@@ -71,6 +72,10 @@ def evaluate(adapter, dataset, settings: Settings,
     try:
         for sample in itertools.chain([first], iterator):
             check_targets(sample)
+            if expect_shape is not None and tuple(sample.shape) != tuple(expect_shape):
+                raise ValueError(
+                    f"expected spatial shape {tuple(expect_shape)}, but sample "
+                    f"{sample.id!r} has {tuple(sample.shape)}")
             z = sample.meta.z_grid
             z_key = None if z is None else (
                 int(len(z)), round(float(z[0]), 9), round(float(z[-1]), 9),

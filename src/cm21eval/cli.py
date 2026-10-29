@@ -41,6 +41,11 @@ def main(argv=None) -> int:
     run.add_argument("--box-mpc", type=float, default=None,
                      help="transverse box size; default: read from the data "
                           "file, else the settings value")
+    run.add_argument("--expect-shape", default=None, metavar="NX,NY,NZ",
+                     help="enforce the sample shape (needed for checkpoints "
+                          "whose run_metadata.json predates spatial_shape)")
+    run.add_argument("--expect-nz", type=int, default=None,
+                     help="enforce the LOS length; NX,NY come from the data")
     run.add_argument("--indices", default=None,
                      help="row indices to evaluate, e.g. '0-199,300'")
     run.add_argument("--indices-json", type=Path, default=None,
@@ -159,6 +164,8 @@ def _run(args) -> int:
         info = dataset.describe()
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
+    _preflight_cache_contracts(models, info)
+    expect_shape = _resolve_expect_shape(args, info)
     if not args.quiet:
         print(f"data   {info}")
         if selection is None and split is None and "undeclared" in info.get(
@@ -174,9 +181,12 @@ def _run(args) -> int:
             print(f"\n[{name}] {spec}")
         adapter = adapters.build(spec, fno_root=fno_root, device=device,
                                  target=target)
+        if expect_shape is not None and hasattr(adapter, "expect_shape"):
+            adapter.expect_shape = expect_shape
         result = evaluate(
             adapter, dataset, settings, names, options,
             progress=None if args.quiet else _progress(name),
+            expect_shape=expect_shape,
         )
         result.name = name
         results.append(result)
@@ -222,8 +232,29 @@ def _demo(args) -> int:
         metrics="all", out=args.out / "results", title="21cmEVAL demo",
         split=None, limit=None, target=None, density=None, fno_root=None,
         device=None, set=[], quiet=args.quiet, indices=None,
-        indices_json=None, box_mpc=None,
+        indices_json=None, box_mpc=None, expect_shape=None, expect_nz=None,
     ))
+
+
+def _resolve_expect_shape(args, info: dict):
+    explicit = getattr(args, "expect_shape", None)
+    expect_nz = getattr(args, "expect_nz", None)
+    if explicit and expect_nz is not None:
+        raise SystemExit("use --expect-shape or --expect-nz, not both")
+    if explicit:
+        parts = [part.strip() for part in str(explicit).split(",")]
+        if len(parts) != 3:
+            raise SystemExit("--expect-shape expects NX,NY,NZ")
+        try:
+            return tuple(int(part) for part in parts)
+        except ValueError:
+            raise SystemExit("--expect-shape expects three integers") from None
+    if expect_nz is not None:
+        shape = info.get("shape")
+        if not shape or len(shape) != 3:
+            raise SystemExit("--expect-nz needs a 3-D dataset shape")
+        return (int(shape[0]), int(shape[1]), int(expect_nz))
+    return None
 
 
 def _preflight_cache_contracts(models: dict, info: dict) -> None:
@@ -234,8 +265,10 @@ def _preflight_cache_contracts(models: dict, info: dict) -> None:
         adapter, _, argument = spec.partition(":")
         if adapter not in {"fno21cm", "fno"}:
             continue
+        from .adapters.fno21cm import metadata_directory
+
         checkpoint = Path(argument).expanduser()
-        metadata_path = checkpoint.parent / "run_metadata.json"
+        metadata_path = metadata_directory(checkpoint) / "run_metadata.json"
         if not metadata_path.exists():
             continue
         try:
