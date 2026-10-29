@@ -71,8 +71,14 @@ def evaluate(adapter, dataset, settings: Settings,
     try:
         for sample in itertools.chain([first], iterator):
             check_targets(sample)
-            current = (sample.shape, round(float(sample.meta.box_mpc), 6)
-                       if sample.meta.box_mpc is not None else None)
+            z = sample.meta.z_grid
+            z_key = None if z is None else (
+                int(len(z)), round(float(z[0]), 9), round(float(z[-1]), 9),
+                round(float(np.sum(z)), 6))
+            current = (sample.shape,
+                       round(float(sample.meta.box_mpc), 6)
+                       if sample.meta.box_mpc is not None else None,
+                       z_key)
             if geometry is None:
                 geometry = current
             elif current != geometry:

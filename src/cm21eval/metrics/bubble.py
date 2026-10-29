@@ -118,9 +118,6 @@ class BubbleSizeMetrics(Metric):
         rows = self._stage_rows(truth)
         stages = []
         for stage_index, slices in enumerate(rows):
-            if len(slices) < self.settings.min_stage_slices:
-                stages.append(None)
-                continue
             t = self._sample_stage(truth, slices, sample.id, stage_index, self.edges, cell)
             p = self._sample_stage(pred, slices, sample.id, stage_index, self.edges, cell)
             if t is None or p is None:

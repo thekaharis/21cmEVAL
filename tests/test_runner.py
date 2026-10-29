@@ -120,6 +120,38 @@ def test_report_files(tmp_path):
     assert "| model |" in text and "toy" in text
 
 
+def test_flatten_keeps_numpy_scalars():
+    flat = report.flatten({"a": np.float32(1.5), "b": np.int64(3),
+                           "c": np.bool_(True)})
+    assert flat == {"a": 1.5, "b": 3, "c": True}
+
+
+def test_geometry_guard_checks_redshift_grid():
+    shape = (12, 12, 4)
+    first = Sample(
+        id="a", inputs={"density": np.ones(shape)},
+        targets={"xhi": np.zeros(shape)},
+        meta=Meta(box_mpc=100.0, z_grid=np.linspace(5, 25, 4)))
+    second = Sample(
+        id="b", inputs={"density": np.ones(shape)},
+        targets={"xhi": np.zeros(shape)},
+        meta=Meta(box_mpc=100.0, z_grid=np.linspace(6, 26, 4)))
+
+    class Two:
+        def __iter__(self):
+            yield first
+            yield second
+
+        def __len__(self):
+            return 2
+
+        def describe(self):
+            return {}
+
+    with pytest.raises(ValueError, match="one geometry per run"):
+        evaluate(SmoothThresholdModel(), Two(), SMALL, ["voxel"])
+
+
 def test_flatten_skips_arrays():
     flat = report.flatten({"a": 1.0, "b": {"c": [1, 2]}, "d": float("nan"),
                            "e": np.array([1.0, 2.0])})

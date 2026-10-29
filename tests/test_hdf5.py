@@ -85,5 +85,22 @@ def test_index_holds_metadata_only(cube_file):
         assert not any(hasattr(value, "shape") for value in row.values())
 
 
+def test_file_box_mpc_wins_over_default(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    path = tmp_path / "box.h5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("density", data=np.ones((1, 6, 6, 4)))
+        handle.create_dataset("neutral_fraction", data=np.zeros((1, 6, 6, 4)))
+        handle.create_dataset("box_mpc", data=np.array(100.0))
+    assert Hdf5Dataset(path).describe()["box_mpc"] == 100.0
+    assert Hdf5Dataset(path, box_mpc=200.0).describe()["box_mpc"] == 200.0
+
+
+def test_out_of_range_indices_raise(cube_file):
+    dataset = Hdf5Dataset(cube_file, indices=[99])
+    with pytest.raises(ValueError, match="outside"):
+        list(dataset)
+
+
 def test_open_data_detects_hdf5(cube_file):
     assert isinstance(open_data(str(cube_file), limit=1), Hdf5Dataset)

@@ -88,7 +88,7 @@ class SpectrumMetrics(Metric):
             "r": r,
             "d2_truth": scale * mean_pt,
             "d2_pred": scale * mean_pp,
-            "highk": highk_stage,
+            "highk_logmse": highk_stage,
         })
 
     def _highk_matrix(self, nx, ny):
@@ -137,7 +137,7 @@ class SpectrumMetrics(Metric):
                          for record in self.records])
         d2t[thin] = np.nan
         d2p[thin] = np.nan
-        highk = np.stack([record["highk"] for record in self.records])
+        highk = np.stack([record["highk_logmse"] for record in self.records])
         highk_med, _, _ = median_band(highk, axis=0)
         ratio_med, ratio_lo, ratio_hi = median_band(ratio, axis=0)
         r_med, r_lo, r_hi = median_band(r, axis=0)
@@ -162,7 +162,7 @@ class SpectrumMetrics(Metric):
                 "delta2_truth_med": d2t_med[row],
                 "delta2_pred_med": d2p_med[row],
                 "k_r90": k_crossing(k, r_med[row], self.settings.coherence_level),
-                "highk": _value(highk_med, row),
+                "highk_logmse": _value(highk_med, row),
             }
             stages.append(entry)
 
@@ -174,7 +174,7 @@ class SpectrumMetrics(Metric):
             headline[f"ratio_k{name}"] = _value(active["power_ratio_med"], index)
             headline[f"coherence_k{name}"] = _value(active["coherence_med"], index)
         headline["k_r90"] = active["k_r90"]
-        headline["highk"] = active["highk"]
+        headline["highk_logmse"] = active["highk_logmse"]
         reference = int(np.argmin(np.abs(np.log(k) - np.log(0.2))))
         headline["k_ref"] = float(k[reference])
         headline["ratio_ref"] = _value(active["power_ratio_med"], reference)
@@ -192,7 +192,7 @@ class SpectrumMetrics(Metric):
             return {}
         ratio, r, d2t, d2p = self._maps()
         out = {"spectrum_k": np.asarray(self._k),
-               "spectrum_highk": np.stack([r["highk"] for r in self.records])}
+               "spectrum_highk_logmse": np.stack([r["highk_logmse"] for r in self.records])}
         labels = stage_labels(self.settings.stage_edges, self.settings.active_range)
         for row, label in enumerate(labels):
             token = label.replace(" ", "_").replace("-", "_").replace(".", "p")

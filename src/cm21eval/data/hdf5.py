@@ -163,7 +163,11 @@ class Hdf5Dataset(BaseDataset):
     def _selection(self) -> list[int]:
         index = self._index()
         rows = list(self.indices) if self.indices is not None else list(range(index["n"]))
-        rows = [row for row in rows if 0 <= row < index["n"]]
+        bad = [row for row in rows if not 0 <= row < index["n"]]
+        if bad:
+            raise ValueError(
+                f"{len(bad)} requested row index(es) are outside "
+                f"{self.path.name} (0..{index['n'] - 1}): {bad[:5]}")
         if self.split:
             declared = index["splits"]
             if all(value is None for value in declared):

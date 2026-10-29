@@ -99,7 +99,7 @@ def _iou_top_k(truth, pred, k: int) -> float:
     ``tools_excursion_set_diagnostic.py``.
     """
     if k <= 0:
-        return float("nan")
+        return 1.0
     k = min(int(k), truth.size)
     return _iou(_top_fraction(truth, k), _top_fraction(pred, k))
 
@@ -114,7 +114,7 @@ def _top_fraction(field, k: int) -> np.ndarray:
 
 def _iou(a, b) -> float:
     union = np.count_nonzero(a | b)
-    return float(np.count_nonzero(a & b) / union) if union else float("nan")
+    return float(np.count_nonzero(a & b) / union) if union else 1.0
 
 
 def _f(value):

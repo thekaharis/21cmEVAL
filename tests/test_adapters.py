@@ -94,6 +94,30 @@ def test_fno_adapter_rejects_wrong_geometry(sample):
         adapter._check_geometry(sample)
 
 
+def test_cache_contract_validation(tmp_path):
+    from cm21eval.adapters.fno21cm import validate_cache_contract
+
+    metadata = {"dataset": {"cache_file": "cubes_3d.h5", "cache_rows": 6600,
+                            "cache_shape": [140, 140, 256]}}
+    info = {"path": "/data/cubes_3d.h5", "n_total": 6600,
+            "shape": [140, 140, 256]}
+    validate_cache_contract(metadata, info, tmp_path / "best.pt")
+    with pytest.raises(ValueError, match="records cache"):
+        validate_cache_contract(metadata, {**info, "path": "/data/other.h5"},
+                                tmp_path / "best.pt")
+    with pytest.raises(ValueError, match="cache rows"):
+        validate_cache_contract(metadata, {**info, "n_total": 10},
+                                tmp_path / "best.pt")
+
+
+def test_density_scale_helper():
+    from cm21eval.adapters.fno21cm import cache_contract
+
+    assert cache_contract({}) is None
+    assert cache_contract({"dataset": {"cache_file": "x.h5"}}) == {
+        "cache_file": "x.h5"}
+
+
 def test_unknown_adapter():
     with pytest.raises(ValueError, match="unknown adapter"):
         build("nonsense:x")

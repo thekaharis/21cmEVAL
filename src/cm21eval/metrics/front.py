@@ -170,12 +170,18 @@ class FrontMetrics(Metric):
             h1 = np.sqrt(self.band_grad[band] / n) if n else np.nan
             errfrac = (self.band_ss[band] / self.total_sq_err
                        if self.total_sq_err > 0 else np.nan)
-            per_sample = [r.get(f"L2_band{band:g}", np.nan)
-                          for r in self.per_sample]
+            per_l2 = [r.get(f"L2_band{band:g}", np.nan)
+                      for r in self.per_sample]
+            per_h1 = [r.get(f"H1_band{band:g}", np.nan)
+                      for r in self.per_sample]
+            per_err = [r.get(f"errfrac_band{band:g}", np.nan)
+                       for r in self.per_sample]
             bands[f"rmse_within_{band:g}mpc"] = _f(l2)
             bands[f"h1_within_{band:g}mpc"] = _f(h1)
             bands[f"errfrac_within_{band:g}mpc"] = _f(errfrac)
-            bands[f"rmse_within_{band:g}mpc_mean"] = _f(_nanmean(per_sample))
+            bands[f"rmse_within_{band:g}mpc_mean"] = _f(_nanmean(per_l2))
+            bands[f"h1_within_{band:g}mpc_mean"] = _f(_nanmean(per_h1))
+            bands[f"errfrac_within_{band:g}mpc_mean"] = _f(_nanmean(per_err))
         status = ("ok" if np.isfinite(width_truth) and np.isfinite(width_pred)
                   else "unresolved: the mean profile does not span 0.1-0.9 "
                        "inside the distance window")

@@ -54,7 +54,7 @@ cm21eval run --data cubes/ \
 | file | content |
 |---|---|
 | `results.json` | complete report, schema `cm21eval/1`, all nested metrics |
-| `summary.csv` | every scalar leaf as one column, one row per model |
+| `summary.csv` | every top-level scalar leaf as one column, one row per model |
 | `stages.csv` | long-form stage/chunk table: model, metric, group, stage, key, value |
 | `report.md` | headline table plus per-stage tables |
 | `curves.npz` | spectra, PDFs, profiles, per-sample records |
@@ -115,8 +115,10 @@ every sample and refuses a mismatch. Scoring a 256-slice model against a
 512-slice envelope cache now fails with "checkpoint trained on spatial shape
 ... but sample has ..." instead of producing a clean-looking 0.49 RMSE. The
 metadata does not record which simulation family a cache came from, so two
-caches with identical shape cannot be distinguished automatically — record
-`cache_file` in `run_metadata.json` at training time if you need that.
+caches with identical shape cannot be distinguished automatically. If
+`run_metadata.json` records `dataset.cache_file`, `cache_rows` or
+`cache_shape`, the CLI enforces it before inference; recording `cache_file` at
+training time makes the binding complete.
 
 An HDF5 cache does not declare train/val/test splits, so `--split test` is
 rejected instead of scoring every row. Use `--indices 0-199` for explicit row
@@ -159,9 +161,10 @@ from the checkpoint's own `run_metadata.json` — nothing is duplicated, so
 legacy, local-operator, waveform and contrast-wrapped runs load through the
 repository's canonical loader.
 
-An external program gets one npz per sample containing every input and target
-array plus a `meta` JSON string, and must write an npz with one array per
-target name. That is the escape hatch for Julia, C++ or a cluster job.
+An external program gets one npz per sample containing the input arrays and
+a `meta` JSON string (targets are deliberately withheld), and must write an
+npz with one array per target name. That is the escape hatch for Julia, C++
+or a cluster job.
 
 ## Metrics
 
@@ -171,9 +174,9 @@ truth and prediction are always paired. `active` is the last row: slices with
 
 | metric | reports | source in `fno-21cm` |
 |---|---|---|
-| `voxel` | RMSE, MSE, MAE, bias, R², Pearson r, R² per sample (mean/p16/p84), gradient RMSE, global-history MAE | `viz/rmse_r2_eval.py`, `util/multifield_metrics.py`, `fno_xhi2d.py` |
+| `voxel` | RMSE, MSE, MAE, bias, R², Pearson r, R² per sample (mean/p16/p84), forward-difference gradient RMSE, per-cube global-history MAE, global high-k power ratio/coherence | `viz/rmse_r2_eval.py`, `util/multifield_metrics.py`, `fno_xhi2d.py` |
 | `edge` | transverse edge vs interior RMSE, active-window RMSE, global-history RMSE | `util/metrics_21cm.py`, `viz/physical_evaluation.py` |
-| `spectrum` | transverse P(k) ratio, coherence r(k), Δ²(k), k where r drops below 0.9, high-k log-power score | `viz/power_spectrum_evaluation.py`, `losses.HighKPowerRatio` |
+| `spectrum` | transverse P(k) ratio, coherence r(k), Δ²(k), k where r drops below 0.9, stage-resolved `HighKPowerRatio` kernel (`highk_logmse`) | `viz/power_spectrum_evaluation.py`, `losses.HighKPowerRatio` |
 | `bubble` | mean-free-path bubble-size PDFs, restricted Wasserstein-1, Jensen-Shannon, size bias, censored fraction | `viz/bubble_size_evaluation.py`, `util/metrics_21cm.py` |
 | `morphology` | 3-D ionized-region count, mean and volume-weighted radius, largest-bubble fraction, IoU at the fixed threshold and at the true ionized cell count | `util/metrics_21cm.py`, `tools_excursion_set_diagnostic.py` |
 | `history` | τ_e, z(x_HI = 0.25/0.5/0.75), Δz, errors in Planck 2018 σ | `util/physical_stats.py`, `viz/physical_evaluation.py` |
@@ -321,7 +324,7 @@ src/cm21eval/
 ## Tests
 
 ```bash
-python -m pytest          # 73 tests, ~2 s, no data and no GPU
+python -m pytest          # 84 tests, ~2 s, no data and no GPU
 cm21eval selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code

@@ -86,7 +86,12 @@ class ParityMetrics(Metric):
         truth_mean[empty] = np.nan
         rmse[empty] = np.nan
         bias[empty] = np.nan
-        bias_max = _f(np.nanmax(np.abs(bias))) if (~empty).any() else None
+        minimum = max(5, int(0.001 * self.count.sum()))
+        occupied = self.count >= minimum
+        bias_max = (_f(np.nanmax(np.abs(bias[occupied])))
+                    if occupied.any() else None)
+        bias_max_count = (int(self.count[occupied][
+            int(np.nanargmax(np.abs(bias[occupied])))]) if occupied.any() else None)
         bins = [
             {
                 "center": float((i + 0.5) / self.n_true),
@@ -106,6 +111,8 @@ class ParityMetrics(Metric):
             "bins": bins,
             "headline": {
                 "conditional_bias_max": bias_max,
+                "conditional_bias_max_count": bias_max_count,
+                "conditional_bias_min_count": minimum,
                 "partial_rmse": (_f(np.sqrt(self._partial_ss / self._partial_count))
                                  if self._partial_count else None),
                 "partial_voxels": int(self._partial_count),

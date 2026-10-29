@@ -35,9 +35,13 @@ class VoxelMetrics(Metric):
         self.per_sample_rmse: list[float] = []
         self.per_sample_r2: list[float] = []
         self.sum_history_abs = 0.0
-        self.history_n = 0
+        self.history_samples = 0
         self.grad_ss = 0.0
         self.grad_n = 0
+        self.highk_pred = 0.0
+        self.highk_truth = 0.0
+        self.highk_cross = 0.0
+        self._highk_mask = None
 
     def update(self, sample, prediction, aux=None, runtime=None):
         truth = self.target(sample)
@@ -61,21 +65,39 @@ class VoxelMetrics(Metric):
         rmse = float(np.sqrt(np.mean(error ** 2)))
         self.per_sample_rmse.append(rmse)
 
+        # Reference fno_xhi2d.final_report: sum |mean_z error| per cube,
+        # divided by the number of cubes (not by n_z).
         history_error = (pred.mean(axis=(0, 1))
                          - truth.mean(axis=(0, 1)))
         self.sum_history_abs += float(np.abs(history_error).sum())
-        self.history_n += history_error.size
+        self.history_samples += 1
 
-        nx, ny = truth.shape[:2]
-        if nx >= 2 and ny >= 2:
-            dx = self.box_mpc(sample) / nx
-            dy = self.box_mpc(sample) / ny
-            gx, gy = np.gradient(error_cube, dx, dy, axis=(0, 1))
-            self.grad_ss += float(np.sum(gx * gx + gy * gy))
-            self.grad_n += error.size
+        # Reference gradient error: forward periodic differences in cell
+        # units, divided by 2 * numel (dx and dy over every voxel).
+        dx = np.roll(error_cube, -1, axis=0) - error_cube
+        dy = np.roll(error_cube, -1, axis=1) - error_cube
+        self.grad_ss += float(np.sum(dx * dx + dy * dy))
+        self.grad_n += 2 * error_cube.size
+
+        mask = self._highk_region(truth.shape[:2])
+        ft = np.fft.rfft2(truth, axes=(0, 1), norm="ortho")
+        fp = np.fft.rfft2(pred, axes=(0, 1), norm="ortho")
+        self.highk_truth += float(np.sum(np.abs(ft[mask]) ** 2))
+        self.highk_pred += float(np.sum(np.abs(fp[mask]) ** 2))
+        self.highk_cross += float(np.sum(np.real(fp[mask] * np.conj(ft[mask]))))
         denominator = float(((t - t.mean()) ** 2).sum())
         if denominator > 0:
             self.per_sample_r2.append(1.0 - float(error @ error) / denominator)
+
+    def _highk_region(self, shape):
+        key = (shape[0], shape[1])
+        if self._highk_mask is not None and self._highk_mask[0] == key:
+            return self._highk_mask[1]
+        fx = np.fft.fftfreq(shape[0])[:, None]
+        fy = np.fft.rfftfreq(shape[1])[None, :]
+        mask = np.sqrt(fx * fx + fy * fy) >= 0.25
+        self._highk_mask = (key, mask)
+        return mask
 
     def result(self):
         if self.n == 0:
@@ -102,8 +124,13 @@ class VoxelMetrics(Metric):
             "r2_per_sample_mean": float(r2_mean) if np.isfinite(r2_mean) else None,
             "gradient_rmse": (float(np.sqrt(self.grad_ss / self.grad_n))
                               if self.grad_n else None),
-            "mean_xhi_mae": (self.sum_history_abs / self.history_n
-                             if self.history_n else None),
+            "mean_xhi_mae": (self.sum_history_abs / self.history_samples
+                             if self.history_samples else None),
+            "high_k_power_ratio": (self.highk_pred / self.highk_truth
+                                   if self.highk_truth > 0 else None),
+            "high_k_cross_correlation": (
+                self.highk_cross / np.sqrt(self.highk_pred * self.highk_truth)
+                if self.highk_pred > 0 and self.highk_truth > 0 else None),
             "r2_per_sample_p16": float(r2_lo) if np.isfinite(r2_lo) else None,
             "r2_per_sample_p84": float(r2_hi) if np.isfinite(r2_hi) else None,
             "n_voxels": int(self.n),

@@ -71,7 +71,9 @@ class EfficiencyMetrics(Metric):
             "ms_per_sample_p16": float(np.percentile(seconds, 16)) * 1e3,
             "ms_per_sample_p84": float(np.percentile(seconds, 84)) * 1e3,
             "samples_per_s": 1.0 / median if median > 0 else None,
-            "slices_per_s": float(slices / np.sum(seconds))
+            "slices_per_s": float(
+                slices / median if timing == "forward_only"
+                else slices / np.sum(seconds))
             if np.sum(seconds) > 0 else None,
             "timing": timing,
             "peak_memory_mib": self.peak,

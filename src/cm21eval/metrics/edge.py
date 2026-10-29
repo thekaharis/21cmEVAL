@@ -40,7 +40,7 @@ class EdgeMetrics(Metric):
         error = pred - truth
         nx, ny = truth.shape[:2]
 
-        width = max(1, min(nx, ny) // 10)
+        width = max(1, int(min(nx, ny) * self.settings.edge_width_fraction))
         edge = np.zeros((nx, ny), dtype=bool)
         edge[:width], edge[-width:] = True, True
         edge[:, :width], edge[:, -width:] = True, True

@@ -38,6 +38,9 @@ def main(argv=None) -> int:
     run.add_argument("--title", default="21cmEVAL report")
     run.add_argument("--split", default=None)
     run.add_argument("--limit", type=int, default=None)
+    run.add_argument("--box-mpc", type=float, default=None,
+                     help="transverse box size; default: read from the data "
+                          "file, else the settings value")
     run.add_argument("--indices", default=None,
                      help="row indices to evaluate, e.g. '0-199,300'")
     run.add_argument("--indices-json", type=Path, default=None,
@@ -111,6 +114,7 @@ def _run(args) -> int:
     density = pick(args.density, "density", "density")
     split = pick(args.split, "split", None)
     limit = pick(args.limit, "limit", None)
+    box_override = pick(args.box_mpc, "box_mpc", None)
     fno_root = pick(args.fno_root, "fno_root", None)
     device = pick(args.device, "device", None)
     models = dict(config.get("models", {}))
@@ -141,7 +145,7 @@ def _run(args) -> int:
 
     dataset = open_data(
         data_spec, target=target, density=density, split=None,
-        limit=None, box_mpc=settings.box_mpc)
+        limit=None, box_mpc=box_override)
     selection = _resolve_selection(dataset, args, run_section, split)
     if selection is not None:
         # An explicit row selection already encodes the split; a second split
@@ -218,8 +222,27 @@ def _demo(args) -> int:
         metrics="all", out=args.out / "results", title="21cmEVAL demo",
         split=None, limit=None, target=None, density=None, fno_root=None,
         device=None, set=[], quiet=args.quiet, indices=None,
-        indices_json=None,
+        indices_json=None, box_mpc=None,
     ))
+
+
+def _preflight_cache_contracts(models: dict, info: dict) -> None:
+    """Enforce a checkpoint's recorded cache identity before loading a model."""
+    from .adapters.fno21cm import validate_cache_contract
+
+    for spec in models.values():
+        adapter, _, argument = spec.partition(":")
+        if adapter not in {"fno21cm", "fno"}:
+            continue
+        checkpoint = Path(argument).expanduser()
+        metadata_path = checkpoint.parent / "run_metadata.json"
+        if not metadata_path.exists():
+            continue
+        try:
+            metadata = json.loads(metadata_path.read_text())
+            validate_cache_contract(metadata, info, checkpoint)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
 
 
 def _resolve_selection(dataset, args, run_section: dict, split: str | None):

@@ -61,6 +61,10 @@ class Fno21cmAdapter(BaseAdapter):
         self.in_channels = int(in_channels)
         shape = features.get("spatial_shape")
         self.spatial_shape = None if shape is None else tuple(int(v) for v in shape)
+        dataset = metadata.get("dataset") if isinstance(metadata.get("dataset"), dict) else {}
+        self.density_scale = float(
+            metadata.get("density_scale",
+                         dataset.get("density_scale", 10.0)))
         self.metadata = metadata
         self.checkpoint = checkpoint
         self.target = target
@@ -78,7 +82,7 @@ class Fno21cmAdapter(BaseAdapter):
         for name in self.channels:
             if name.startswith("density"):
                 density = np.asarray(sample.inputs["density"], dtype=np.float32)
-                stack.append(density / 10.0)
+                stack.append(density / self.density_scale)
             elif name == "1/(1+z)":
                 if z is None:
                     raise ValueError(
@@ -167,6 +171,8 @@ class Fno21cmAdapter(BaseAdapter):
             "spatial_shape": None if self.spatial_shape is None
             else list(self.spatial_shape),
             "in_channels": self.in_channels,
+            "density_scale": self.density_scale,
+            "cache_contract": cache_contract(self.metadata),
             "model_kind": (self.metadata.get("model_config") or {}).get("kind"),
         })
         return info
@@ -177,6 +183,51 @@ class Fno21cmAdapter(BaseAdapter):
         del self.model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+
+def cache_contract(metadata: dict) -> dict | None:
+    """Return the cache identity a run recorded, if any.
+
+    Training currently records no dataset path, so this is often empty. When
+    ``dataset.cache_file`` / ``cache_path`` / ``cache_rows`` / ``cache_shape``
+    are present, the CLI enforces them before inference.
+    """
+    dataset = metadata.get("dataset")
+    dataset = dataset if isinstance(dataset, dict) else {}
+    contract = {}
+    for key in ("cache_file", "cache_path", "cache_rows", "cache_shape",
+                "cache_sha256"):
+        value = dataset.get(key, metadata.get(key))
+        if value is not None:
+            contract[key] = value
+    return contract or None
+
+
+def validate_cache_contract(metadata: dict, dataset_info: dict,
+                            checkpoint: str | Path) -> None:
+    """Fail when a run's recorded cache identity does not match the data."""
+    contract = cache_contract(metadata)
+    if not contract:
+        return
+    declared = contract.get("cache_file") or contract.get("cache_path")
+    actual = dataset_info.get("path")
+    if declared and actual and Path(str(declared)).name != Path(str(actual)).name:
+        raise ValueError(
+            f"checkpoint {Path(checkpoint).name} records cache "
+            f"{Path(str(declared)).name!r}, but the dataset is "
+            f"{Path(str(actual)).name!r}")
+    if ("cache_rows" in contract and dataset_info.get("n_total") is not None
+            and int(contract["cache_rows"]) != int(dataset_info["n_total"])):
+        raise ValueError(
+            f"checkpoint {Path(checkpoint).name} records "
+            f"{contract['cache_rows']} cache rows, dataset has "
+            f"{dataset_info['n_total']}")
+    if ("cache_shape" in contract and dataset_info.get("shape")
+            and list(map(int, contract["cache_shape"]))
+            != list(map(int, dataset_info["shape"]))):
+        raise ValueError(
+            f"checkpoint {Path(checkpoint).name} records cache shape "
+            f"{contract['cache_shape']}, dataset has {dataset_info['shape']}")
 
 
 def _normalize(metadata: dict, name: str, value: float) -> float:

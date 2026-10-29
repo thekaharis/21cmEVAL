@@ -4,6 +4,7 @@ import pytest
 from cm21eval.metrics.anisotropy import AnisotropyMetrics
 from cm21eval.metrics.bubble import BubbleSizeMetrics
 from cm21eval.metrics.edge import EdgeMetrics
+from cm21eval.metrics.efficiency import EfficiencyMetrics
 from cm21eval.metrics.eft import EftMetrics
 from cm21eval.metrics.front import FrontMetrics
 from cm21eval.metrics.history import HistoryMetrics
@@ -44,6 +45,29 @@ def test_voxel_analytic():
     assert result["rmse"] == pytest.approx(0.1, rel=1e-6)
     assert result["bias"] == pytest.approx(0.1, rel=1e-6)
     assert result["mae"] == pytest.approx(0.1, rel=1e-6)
+
+
+def test_voxel_gradient_matches_reference_forward_difference():
+    sample = make_sample()
+    truth = sample.targets["xhi"].astype(np.float64)
+    pred = truth + 0.05 * np.random.default_rng(1).normal(size=truth.shape)
+    metric = VoxelMetrics(SETTINGS)
+    metric.update(sample, {"xhi": pred})
+    error = pred - truth
+    dx = np.roll(error, -1, axis=0) - error
+    dy = np.roll(error, -1, axis=1) - error
+    expected = np.sqrt(np.sum(dx * dx + dy * dy) / (2 * error.size))
+    assert metric.result()["gradient_rmse"] == pytest.approx(expected, rel=1e-9)
+
+
+def test_voxel_mean_xhi_mae_matches_reference():
+    sample = make_sample()
+    truth = sample.targets["xhi"].astype(np.float64)
+    pred = truth + 0.1
+    metric = VoxelMetrics(SETTINGS)
+    metric.update(sample, {"xhi": pred})
+    expected = float(np.abs((pred.mean(axis=(0, 1)) - truth.mean(axis=(0, 1)))).sum())
+    assert metric.result()["mean_xhi_mae"] == pytest.approx(expected, rel=1e-9)
 
 
 def test_voxel_r2_against_constant_mean():
@@ -104,6 +128,19 @@ def test_observable_perfect():
     assert active["partial_fraction_excess"] == pytest.approx(0.0, abs=1e-12)
     assert active["w1_xhi"] == pytest.approx(0.0, abs=1e-12)
     assert active["dtb_variance_ratio"] == pytest.approx(1.0, rel=1e-9)
+
+
+def test_observable_dxbar_and_xbar_d2_shapes():
+    sample = make_sample()
+    truth = sample.targets["xhi"]
+    metric = ObservableMetrics(SETTINGS)
+    metric.update(sample, {"xhi": np.clip(truth + 0.05, 0, 1)})
+    result = metric.result()
+    nz = truth.shape[2]
+    assert len(result["dxbar"]["med"]) == nz
+    assert result["dxbar"]["n_z"] == nz
+    stage = metric.rows[0]
+    assert stage["xbar_d2_truth"].shape == (20, len(SETTINGS.k_targets))
 
 
 def test_observable_requires_density():
@@ -211,6 +248,19 @@ def test_eft_normalisation_matches_manual():
     assert np.allclose(stage["eps_truth"], expected, equal_nan=True, rtol=1e-12)
 
 
+def test_morphology_all_neutral_iou_is_one():
+    truth = np.ones((12, 12, 4), dtype=np.float32)
+    sample = Sample(
+        id="neutral", inputs={"density": np.ones_like(truth)},
+        targets={"xhi": truth},
+        meta=Meta(box_mpc=100.0, z_grid=np.linspace(5, 25, 4)))
+    metric = MorphologyMetrics(SETTINGS)
+    metric.update(sample, {"xhi": truth})
+    iou = metric.result()["iou"]
+    assert iou["threshold"] == pytest.approx(1.0)
+    assert iou["matched"] == pytest.approx(1.0)
+
+
 def test_morphology_bimodal_iou():
     rng = np.random.default_rng(3)
     truth = (rng.random((16, 16, 8)) > 0.5).astype(np.float32)
@@ -266,6 +316,14 @@ def test_edge_metric_reports_active_window():
     result = metric.result()
     assert result["transverse_edge_rmse"] == pytest.approx(0.0, abs=1e-9)
     assert result["global_history_rmse"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_efficiency_benchmark_uses_median_rate():
+    metric = EfficiencyMetrics(SETTINGS)
+    metric.observe_benchmark({"seconds": [1.0, 3.0], "slices": 4})
+    result = metric.result()
+    assert result["timing"] == "forward_only"
+    assert result["slices_per_s"] == pytest.approx(2.0)
 
 
 def test_symmetry_records_rerun():

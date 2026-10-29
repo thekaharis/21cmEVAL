@@ -31,6 +31,8 @@ def jsonable(value):
 def flatten(value, prefix: str = "") -> dict:
     """Dotted scalar leaves; arrays and lists are skipped."""
     out = {}
+    if isinstance(value, np.generic):
+        value = value.item()
     if isinstance(value, dict):
         for key, item in value.items():
             out.update(flatten(item, f"{prefix}.{key}" if prefix else str(key)))
@@ -121,6 +123,8 @@ def write(directory, models, dataset_info: dict, settings: dict,
             writer = csv.DictWriter(handle, fieldnames=keys)
             writer.writeheader()
             writer.writerows(stage_rows)
+    elif (directory / "stages.csv").exists():
+        (directory / "stages.csv").unlink()
 
     (directory / "report.md").write_text(
         render_markdown(models, dataset_info, settings, title))

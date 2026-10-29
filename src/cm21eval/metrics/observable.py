@@ -157,11 +157,11 @@ class ObservableMetrics(Metric):
                                           self.xbar_edges),
             "xbar_skew_pred": _xbar_mean(moments_pred["skewness"], xbar_truth,
                                          self.xbar_edges),
-            "xbar_d2_truth": _xbar_mean(
-                _per_slice_d2(power_dt, counts, scale[target_index[0]]),
+            "xbar_d2_truth": _xbar_mean_multi(
+                _per_slice_d2(power_dt, counts, scale, target_index),
                 xbar_truth, self.xbar_edges),
-            "xbar_d2_pred": _xbar_mean(
-                _per_slice_d2(power_dp, counts, scale[target_index[0]]),
+            "xbar_d2_pred": _xbar_mean_multi(
+                _per_slice_d2(power_dp, counts, scale, target_index),
                 xbar_truth, self.xbar_edges),
         })
 
@@ -226,15 +226,16 @@ class ObservableMetrics(Metric):
         active = stages[-1]
         dxbar = np.array([row["xbar_pred"] - row["xbar_truth"]
                           for row in self.rows])
-        dxbar_med, dxbar_lo, dxbar_hi = _band(dxbar)
+        dxbar_med, dxbar_lo, dxbar_hi = _band_curve(dxbar)
         return {
             "stage_labels": labels,
             "stages": stages,
             "dxbar": {
-                "med": _f(dxbar_med),
-                "p16": _f(dxbar_lo),
-                "p84": _f(dxbar_hi),
+                "med": _list(dxbar_med),
+                "p16": _list(dxbar_lo),
+                "p84": _list(dxbar_hi),
                 "abs_max": _f(np.nanmax(np.abs(dxbar))) if dxbar.size else None,
+                "n_z": int(dxbar.shape[1]),
             },
             "active": {
                 "w1_xhi": active["w1_xhi"],
@@ -280,6 +281,12 @@ class ObservableMetrics(Metric):
                         if r[f"{key}_{which}"] is not None]
                 if rows:
                     out[f"observable_{key}_{which}"] = np.stack(rows)
+        dxbar = np.array([row["xbar_pred"] - row["xbar_truth"]
+                          for row in self.rows])
+        dxbar_med, dxbar_lo, dxbar_hi = _band_curve(dxbar)
+        out["observable_dxbar_med"] = dxbar_med
+        out["observable_dxbar_p16"] = dxbar_lo
+        out["observable_dxbar_p84"] = dxbar_hi
         out["observable_xbar_truth"] = np.stack(
             [r["xbar_truth"] for r in self.rows])
         out["observable_xbar_pred"] = np.stack(
@@ -308,9 +315,26 @@ def _significance(sum_truth, sum_pred, counts):
         return np.nanmedian(values, axis=0)
 
 
-def _per_slice_d2(power, counts, scale):
+def _per_slice_d2(power, counts, scale, targets):
+    """(n_z, n_targets) Delta^2 per slice at the requested k bins."""
+    target_counts = np.asarray(counts)[targets][None, :]
     with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(counts[None, :] > 0, scale * power / counts, np.nan)
+        values = (power[:, targets]
+                  * np.asarray(scale)[None, targets] / target_counts)
+    return np.where(target_counts > 0, values, np.nan)
+
+
+def _xbar_mean_multi(per_slice, xbar, edges):
+    """Bin a (n_z, n_targets) per-slice array by xbar -> (n_bins, n_targets)."""
+    index = np.clip(np.digitize(xbar, edges) - 1, 0, len(edges) - 2)
+    out = np.full((len(edges) - 1, per_slice.shape[1]), np.nan)
+    with warnings.catch_warnings(), np.errstate(all="ignore"):
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for b in range(len(edges) - 1):
+            select = index == b
+            if select.any():
+                out[b] = np.nanmean(per_slice[select], axis=0)
+    return out
 
 
 def _xbar_mean(per_slice, xbar, edges):
@@ -325,11 +349,16 @@ def _xbar_mean(per_slice, xbar, edges):
     return out
 
 
-def _band(values):
+def _band_curve(values):
+    """Median and 16-84 percentiles over samples, keeping the z axis."""
     with warnings.catch_warnings(), np.errstate(all="ignore"):
         warnings.simplefilter("ignore", RuntimeWarning)
-        return (np.nanmedian(values), np.nanpercentile(values, 16),
-                np.nanpercentile(values, 84))
+        return (np.nanmedian(values, axis=0), np.nanpercentile(values, 16, axis=0),
+                np.nanpercentile(values, 84, axis=0))
+
+
+def _list(values):
+    return [None if not np.isfinite(value) else float(value) for value in values]
 
 
 def _f(value):
