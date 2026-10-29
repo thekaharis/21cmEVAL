@@ -1,5 +1,10 @@
 """HDF5 cube cache (the fno-21cm ``cubes_3d.h5`` layout and friends).
 
+The loader is **lazy**: it indexes ids, parameters and geometry once, then
+reads one cube per iteration. A 6600-cone cache is ~265 GB, so materialising
+every row (the behaviour this replaced) cannot run on a login node and wastes
+most of a large node.
+
 Auto-detects the two layouts that occur in practice:
 
 * training layout -- ``x`` (N, C, Nx, Ny, Nz) and ``y`` (N, 1, Nx, Ny, Nz);
@@ -11,10 +16,6 @@ An HDF5 cache does not declare train/val/test splits. ``Sample.split`` is
 a ``--split`` filter rather than silently treating every row as test. For a
 real evaluation select rows with ``--indices`` or with the checkpoint's own
 ``--indices-json`` (which prefers ``test_cone_ids``).
-
-The whole channel stack is exposed as ``x`` for the torch/fno-21cm adapters;
-the density cube is exposed separately so the physics metrics work on both
-layouts.
 """
 from __future__ import annotations
 
@@ -59,48 +60,48 @@ class Hdf5Dataset(BaseDataset):
         self.default_omega_m = default_omega_m
         self.split_map = split_map
         self.cone_ids: list[str] = []
-        self._loaded: list[Sample] | None = None
+        self._index_cache: dict | None = None
 
-    # ------------------------------------------------------------------ keys
-    def _target_key(self, handle) -> str | None:
-        keys = set(handle.keys())
-        if self.y_key:
-            return self.y_key
-        if self.target == "xhi":
-            for key in _XHI_ALIASES:
-                if key in keys:
-                    return key
-            return None
-        return self.target if self.target in keys else None
-
-    # ------------------------------------------------------------------ load
-    def _samples(self) -> list[Sample]:
-        if self._loaded is None:
-            self._loaded = self._load()
-        return self._loaded
-
+    # ------------------------------------------------------------------ index
     @staticmethod
     def _decode(value) -> str:
         return value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
 
-    def _load(self) -> list[Sample]:
+    def _keys(self, handle) -> tuple[str | None, str | None, str | None]:
+        keys = set(handle.keys())
+        x_key = self.x_key or ("x" if "x" in keys else None)
+        if self.y_key:
+            y_key = self.y_key
+        elif self.target == "xhi":
+            y_key = next((key for key in _XHI_ALIASES if key in keys), None)
+        else:
+            y_key = self.target if self.target in keys else None
+        density_key = self.density if self.density in keys else None
+        return x_key, y_key, density_key
+
+    def _index(self) -> dict:
+        """Read ids, parameters and geometry only -- never the cubes."""
+        if self._index_cache is not None:
+            return self._index_cache
         import h5py
 
         with h5py.File(self.path, "r") as handle:
-            y_key = self._target_key(handle)
+            x_key, y_key, density_key = self._keys(handle)
             if y_key is None:
                 raise KeyError(
                     f"{self.path} has no target field for {self.target!r}; "
                     f"keys: {sorted(handle.keys())}. Pass y_key explicitly.")
             target = handle[y_key]
-            n = target.shape[0]
-            x_key = self.x_key or ("x" if "x" in handle else None)
-            x = handle[x_key] if x_key else None
-            density = handle[self.density] if self.density in handle else None
-            z = np.asarray(handle[self.z_key]) if self.z_key in handle else None
+            n = int(target.shape[0])
+            sample_shape = tuple(int(v) for v in target.shape[1:])
+            if len(sample_shape) == 4 and sample_shape[0] == 1:
+                sample_shape = sample_shape[1:]
+            z = (np.asarray(handle[self.z_key], dtype=np.float64)
+                 if self.z_key in handle else None)
             box = self.box_mpc
             if box is None and "box_mpc" in handle:
                 box = float(np.asarray(handle["box_mpc"]))
+
             params = None
             param_names = None
             if self.params_key in handle:
@@ -108,65 +109,113 @@ class Hdf5Dataset(BaseDataset):
                 if isinstance(node, h5py.Group):
                     params = np.asarray(node["values"])
                     if "names" in node:
-                        param_names = [self._decode(v) for v in np.asarray(node["names"])]
+                        param_names = [self._decode(v)
+                                       for v in np.asarray(node["names"])]
                 else:
                     params = np.asarray(node)
+                if params is not None and param_names is None:
+                    attrs = handle[self.params_key].attrs
+                    if "names" in attrs:
+                        param_names = [self._decode(v) for v in attrs["names"]]
             ids = (np.asarray(handle[self.id_key])
                    if self.id_key and self.id_key in handle else None)
-            if params is not None and param_names is None and self.params_key in handle:
-                attrs = handle[self.params_key].attrs
-                if "names" in attrs:
-                    param_names = [self._decode(v) for v in attrs["names"]]
 
-            split_of_row: dict[int, str] = {}
-            for split_name, rows in (self.split_map or {}).items():
-                for row in rows:
-                    split_of_row[int(row)] = str(split_name)
+        rows = []
+        for i in range(n):
+            values = {}
+            if params is not None and i < len(params):
+                if param_names:
+                    names = param_names
+                elif len(params[i]) == len(LIGHTCONE_PARAM_NAMES):
+                    names = LIGHTCONE_PARAM_NAMES
+                else:
+                    names = [f"p{j}" for j in range(len(params[i]))]
+                values = {name: float(value) for name, value in zip(names, params[i])}
+            omega = self.default_omega_m
+            if "OMm" in values and np.isfinite(values["OMm"]):
+                omega = float(values["OMm"])
+            rows.append({
+                "id": self._decode(ids[i]) if ids is not None else f"sample{i:04d}",
+                "params": values,
+                "omega_m": omega,
+            })
 
-            samples = []
-            for i in range(n):
-                y = np.asarray(target[i])
-                if y.ndim == 4:
-                    y = y[0]
+        split_of_row = {}
+        for split_name, rows_in_split in (self.split_map or {}).items():
+            for row in rows_in_split:
+                split_of_row[int(row)] = str(split_name)
+
+        self._index_cache = {
+            "n": n,
+            "x_key": x_key,
+            "y_key": y_key,
+            "density_key": density_key,
+            "shape": sample_shape,
+            "z": z,
+            "box": box,
+            "rows": rows,
+            "splits": [split_of_row.get(i) for i in range(n)],
+        }
+        self.cone_ids = [row["id"] for row in rows]
+        return self._index_cache
+
+    # -------------------------------------------------------------- selection
+    def _selection(self) -> list[int]:
+        index = self._index()
+        rows = list(self.indices) if self.indices is not None else list(range(index["n"]))
+        rows = [row for row in rows if 0 <= row < index["n"]]
+        if self.split:
+            declared = index["splits"]
+            if all(value is None for value in declared):
+                raise ValueError(
+                    f"this dataset does not declare splits, so --split "
+                    f"{self.split!r} cannot be honoured. Pass --indices or "
+                    f"--indices-json to select the evaluation rows explicitly.")
+            rows = [row for row in rows if declared[row] == self.split]
+        if self.limit is not None:
+            rows = rows[:self.limit]
+        return rows
+
+    def __len__(self) -> int:
+        return len(self._selection())
+
+    def __iter__(self):
+        index = self._index()
+        rows = self._selection()
+        if not rows:
+            return
+        import h5py
+
+        with h5py.File(self.path, "r") as handle:
+            y = handle[index["y_key"]]
+            x = handle[index["x_key"]] if index["x_key"] else None
+            density = handle[index["density_key"]] if index["density_key"] else None
+            for i in rows:
+                target = np.asarray(y[i])
+                if target.ndim == 4 and target.shape[0] == 1:
+                    target = target[0]
                 inputs = {}
                 if x is not None:
                     inputs["x"] = np.asarray(x[i])
                 if density is not None:
                     inputs["density"] = np.asarray(density[i])
-                values = {}
-                if params is not None and i < len(params):
-                    if param_names:
-                        names = param_names
-                    elif len(params[i]) == len(LIGHTCONE_PARAM_NAMES):
-                        names = LIGHTCONE_PARAM_NAMES
-                    else:
-                        names = [f"p{j}" for j in range(len(params[i]))]
-                    values = {name: float(v) for name, v in zip(names, params[i])}
-                omega = self.default_omega_m
-                if "OMm" in values and np.isfinite(values["OMm"]):
-                    omega = float(values["OMm"])
-                sample_id = (self._decode(ids[i]) if ids is not None
-                             else f"sample{i:04d}")
-                samples.append(Sample(
-                    id=sample_id,
+                row = index["rows"][i]
+                yield Sample(
+                    id=row["id"],
                     inputs=inputs,
-                    targets={self.target: y},
+                    targets={self.target: target},
                     meta=Meta(
-                        box_mpc=box,
-                        z_grid=None if z is None else np.asarray(z, dtype=np.float64),
-                        omega_m=omega,
-                        params=values,
+                        box_mpc=index["box"],
+                        z_grid=index["z"],
+                        omega_m=row["omega_m"],
+                        params=row["params"],
                     ),
-                    split=split_of_row.get(i),
-                ))
-        self.cone_ids = [sample.id for sample in samples]
-        return samples
+                    split=index["splits"][i],
+                )
 
-    # ------------------------------------------------------------- selection
     def row_indices_for_ids(self, ids) -> list[int]:
-        """Map cone ids to cache rows; fail if any id is absent."""
-        samples = self._samples()
-        position = {sample.id: index for index, sample in enumerate(samples)}
+        index = self._index()
+        position = {row["id"]: i for i, row in enumerate(index["rows"])}
         missing = [str(value) for value in ids if str(value) not in position]
         if missing:
             raise KeyError(
@@ -175,27 +224,25 @@ class Hdf5Dataset(BaseDataset):
         return [position[str(value)] for value in ids]
 
     def describe(self) -> dict:
-        samples = self._samples()
-        visible = self._visible(samples)
-        first = visible[0] if visible else None
+        index = self._index()
+        rows = self._selection()
+        z = index["z"]
+        splits: dict[str, int] = {}
+        for split in index["splits"]:
+            key = split or "undeclared"
+            splits[key] = splits.get(key, 0) + 1
         return {
             "format": "hdf5",
             "path": str(self.path),
-            "n_total": len(samples),
-            "n_samples": len(visible),
+            "n_total": index["n"],
+            "n_samples": len(rows),
             "split": self.split,
             "indices": None if self.indices is None else len(self.indices),
-            "shape": list(first.shape) if first else None,
-            "box_mpc": first.meta.box_mpc if first else None,
-            "inputs": sorted(first.inputs) if first else [],
-            "targets": sorted(first.targets) if first else [],
-            "splits": _split_counts(samples),
+            "shape": list(index["shape"]),
+            "box_mpc": index["box"],
+            "z_range": None if z is None else [float(z[0]), float(z[-1])],
+            "inputs": [name for name in ("x", "density")
+                       if index[f"{name}_key" if name == "x" else "density_key"]],
+            "targets": [self.target],
+            "splits": splits,
         }
-
-
-def _split_counts(samples) -> dict:
-    counts: dict[str, int] = {}
-    for sample in samples:
-        key = sample.split or "undeclared"
-        counts[key] = counts.get(key, 0) + 1
-    return counts

@@ -58,6 +58,9 @@ class Fno21cmAdapter(BaseAdapter):
         self.model.eval()
         self.device = str(next(self.model.parameters()).device)
         self.channels = channels
+        self.in_channels = int(in_channels)
+        shape = features.get("spatial_shape")
+        self.spatial_shape = None if shape is None else tuple(int(v) for v in shape)
         self.metadata = metadata
         self.checkpoint = checkpoint
         self.target = target
@@ -94,9 +97,24 @@ class Fno21cmAdapter(BaseAdapter):
                                      dtype=np.float32))
         return np.stack(stack, axis=0)
 
+    def _check_geometry(self, sample: Sample) -> None:
+        if self.spatial_shape is not None and tuple(sample.shape) != self.spatial_shape:
+            raise ValueError(
+                f"checkpoint {self.checkpoint.name} was trained on spatial "
+                f"shape {self.spatial_shape}, but sample {sample.id!r} has "
+                f"{tuple(sample.shape)}. This usually means the cube cache is "
+                f"the wrong one (e.g. a 512-slice envelope cache for a "
+                f"256-slice model); pass the cache recorded for this run.")
+        channels = len(self.channels)
+        if channels != self.in_channels:
+            raise ValueError(
+                f"checkpoint expects {self.in_channels} input channels, "
+                f"metadata declares {channels}")
+
     def predict(self, sample: Sample) -> dict:
         import torch
 
+        self._check_geometry(sample)
         stacked = self._channels(sample)
         tensor = torch.from_numpy(stacked).unsqueeze(0).to(self.device)
         with torch.no_grad():
@@ -146,6 +164,9 @@ class Fno21cmAdapter(BaseAdapter):
             "checkpoint": str(self.checkpoint),
             "channels": list(self.channels),
             "target": self.target,
+            "spatial_shape": None if self.spatial_shape is None
+            else list(self.spatial_shape),
+            "in_channels": self.in_channels,
             "model_kind": (self.metadata.get("model_config") or {}).get("kind"),
         })
         return info

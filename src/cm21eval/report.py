@@ -141,7 +141,7 @@ HEADLINE = (
     ("bubble W1", ("bubble", "active", "wasserstein_med_mpc"), "{:.2f}"),
     ("partial excess", ("observable", "active", "partial_fraction_excess"), "{:+.4f}"),
     ("ms/sample", ("efficiency", "ms_per_sample"), "{:.1f}"),
-    ("params", ("efficiency", "parameters"), "{:,}"),
+    ("params", ("efficiency", "parameters"), "{:,.0f}"),
 )
 
 
@@ -157,6 +157,11 @@ def render_markdown(models, dataset_info: dict, settings: dict,
     lines.append(
         f"Created {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · "
         f"{scope} · shape {dataset_info.get('shape')} · box {box} Mpc")
+    location = dataset_info.get("path") or dataset_info.get("root")
+    if location:
+        z_range = dataset_info.get("z_range")
+        detail = f" · z {z_range[0]:g}–{z_range[1]:g}" if z_range else ""
+        lines.append(f"Data: `{location}`{detail}")
     lines.append("")
 
     columns = [(label, path, fmt) for label, path, fmt in HEADLINE
@@ -180,9 +185,11 @@ def render_markdown(models, dataset_info: dict, settings: dict,
         lines += [f"## {model.name}", ""]
         info = flatten(model.info)
         if info:
-            lines.append(" · ".join(f"{key}: {value}" for key, value in info.items()
-                                    if key in {"framework", "device", "model_kind",
-                                               "checkpoint"}))
+            keys = {"framework", "device", "model_kind", "checkpoint",
+                    "spatial_shape", "in_channels", "target"}
+            lines.append(" · ".join(
+                f"{key}: {value}" for key, value in info.items()
+                if key in keys and value is not None))
             lines.append("")
         for metric_name, result in model.metrics.items():
             if not result:

@@ -80,6 +80,20 @@ def test_toy_adapter_is_bounded(sample):
     assert values.min() >= 0 and values.max() <= 1
 
 
+def test_fno_adapter_rejects_wrong_geometry(sample):
+    from pathlib import Path
+
+    from cm21eval.adapters.fno21cm import Fno21cmAdapter
+
+    adapter = object.__new__(Fno21cmAdapter)
+    adapter.spatial_shape = (8, 8, 99)
+    adapter.in_channels = 2
+    adapter.channels = ("density/10", "1/(1+z)")
+    adapter.checkpoint = Path("best.pt")
+    with pytest.raises(ValueError, match="trained on spatial shape"):
+        adapter._check_geometry(sample)
+
+
 def test_unknown_adapter():
     with pytest.raises(ValueError, match="unknown adapter"):
         build("nonsense:x")

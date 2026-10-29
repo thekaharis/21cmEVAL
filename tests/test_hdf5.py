@@ -75,5 +75,15 @@ def test_omega_m_from_params(cube_file):
     assert next(iter(dataset)).meta.omega_m is not None
 
 
+def test_index_holds_metadata_only(cube_file):
+    dataset = Hdf5Dataset(cube_file)
+    index = dataset._index()
+    assert index["n"] == 3
+    for row in index["rows"]:
+        assert isinstance(row["id"], str)
+        assert isinstance(row["params"], dict)
+        assert not any(hasattr(value, "shape") for value in row.values())
+
+
 def test_open_data_detects_hdf5(cube_file):
     assert isinstance(open_data(str(cube_file), limit=1), Hdf5Dataset)

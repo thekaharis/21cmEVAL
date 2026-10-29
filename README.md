@@ -105,6 +105,19 @@ Nz)` + `y`, or `density` + `neutral_fraction` + `target_z` + `params`.
 For a different layout construct `Hdf5Dataset` directly with explicit keys —
 `cm21eval.data.hdf5` documents every argument.
 
+The HDF5 loader indexes ids/parameters/geometry once and reads one cube per
+iteration; it never materialises the cache. A 6600-cone `cubes_3d.h5` is about
+265 GB, so opening it is cheap even on a login node, while the actual sweep
+still wants a GPU (see below).
+
+The fno-21cm adapter checks the checkpoint's recorded `spatial_shape` against
+every sample and refuses a mismatch. Scoring a 256-slice model against a
+512-slice envelope cache now fails with "checkpoint trained on spatial shape
+... but sample has ..." instead of producing a clean-looking 0.49 RMSE. The
+metadata does not record which simulation family a cache came from, so two
+caches with identical shape cannot be distinguished automatically — record
+`cache_file` in `run_metadata.json` at training time if you need that.
+
 An HDF5 cache does not declare train/val/test splits, so `--split test` is
 rejected instead of scoring every row. Use `--indices 0-199` for explicit row
 numbers, or `--indices-json path/to/run_metadata.json` to reuse the split the
@@ -283,6 +296,9 @@ src/cm21eval/
 * **Fast ray tracing.** Bubble sizes use a vectorised DDA that advances all
   rays together: 256 rays on a 140² slice take about a millisecond, so the
   full stage-resolved bubble diagnostic costs ~0.06 s per cone.
+* **Cost on real data.** On 16 CPU cores a 140²×256 forward pass is 30–60 s
+  and the full 14-metric pass is ≈4–5 min per cone; voxel+history+parity is
+  ≈55 s per cone. Use a GPU for production sweeps.
 * **Fail loudly.** Shape mismatches, missing channels and unknown metrics
   raise; a metric that cannot run is listed under `skipped` with the reason.
 * **Numpy core.** `import cm21eval` does not import torch. Torch appears only
@@ -305,7 +321,7 @@ src/cm21eval/
 ## Tests
 
 ```bash
-python -m pytest          # 71 tests, ~2 s, no data and no GPU
+python -m pytest          # 73 tests, ~2 s, no data and no GPU
 cm21eval selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code
