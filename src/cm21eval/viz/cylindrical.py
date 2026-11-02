@@ -52,10 +52,10 @@ def _pooled(cat, target, model, key):
     return np.concatenate(parts, 0)
 
 
-def _same(cat, target, key):
+def _same(cat, target, key, rtol=1e-9):
     values = [run.curves(m)[key] for m in cat.models for run in cat.runs_for(target, m)]
     for v in values[1:]:
-        if np.shape(v) != np.shape(values[0]) or not np.allclose(v, values[0], equal_nan=True):
+        if np.shape(v) != np.shape(values[0]) or not np.allclose(v, values[0], rtol=rtol, atol=0, equal_nan=True):
             raise SystemExit(f"cylindrical: {key} differs between runs/models of target {target!r}; "
                              "the maps can only be pooled on one chunk geometry")
     return values[0]
@@ -72,7 +72,7 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
                 print(f"cylindrical: no 'cylindrical' results for target {target!r}; skipped")
             continue
         kperp = _same(cat, target, "cyl_kperp_edges")
-        kpar_all = _same(cat, target, "cyl_kpar_edges")
+        kpar_all = _same(cat, target, "cyl_kpar_edges", rtol=2e-3)   # same LOS frequencies, cells within 0.2 %
         columns = _same(cat, target, "cyl_columns")
         mode = str(_same_mode(cat, target))
         run0 = cat.runs_for(target, cat.models[0])

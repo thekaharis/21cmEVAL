@@ -100,6 +100,15 @@ def test_cylindrical_resamples_nonuniform_grid_and_marks_resolution():
     assert np.allclose(np.diff(a["cyl_kpar_edges"]), 2 * np.pi / (16 * CELL))   # transverse cell along the LOS
 
 
+def test_cylindrical_uses_the_sample_cosmology():
+    z = uniform_z_grid(48, omega_m=0.308, h=0.6766)
+    s = cone(nz=48, z=z)
+    s = Sample(id="c", inputs=s.inputs, targets=s.targets, meta=Meta(box_mpc=BOX, z_grid=z, omega_m=0.308))
+    m = CylindricalMetrics(SET)
+    m.update(s, {"xhi": s.targets["xhi"]})
+    assert m._uniform and m.cell_los == pytest.approx(CELL, rel=1e-6)
+
+
 def test_cylindrical_needs_true_xhi_for_stages():
     s = cone()
     tb = Sample(id="t", inputs={"density": s.inputs["density"]}, targets={"tb": s.targets["xhi"] * 20},

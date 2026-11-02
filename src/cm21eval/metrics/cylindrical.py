@@ -92,17 +92,16 @@ class CylindricalMetrics(Metric):
             self.cell_los = cell_los
             native = self.settings.cyl_native_cell_mpc
             self.kperp_max = np.pi / native if native else np.inf
-        elif abs(cell_los / self.cell_los - 1) > 1e-6 or self._binner.edges.size != self.settings.n_k_bins + 1:
+        elif abs(cell_los / self.cell_los - 1) > UNIFORM_TOL or self._binner.edges.size != self.settings.n_k_bins + 1:
             raise ValueError("cylindrical: LOS cell size changed between samples; one geometry per run")
         return self._binner
 
-    def _native_kpar(self, z_center: float) -> float:
+    def _native_kpar(self, z_center: float, omega_m: float) -> float:
         s = self.settings
         if s.cyl_native_los_mpc:
             return np.pi / s.cyl_native_los_mpc
         if s.cyl_native_los_dz:
-            return np.pi / los_cell_size_mpc(z_center, s.cyl_native_los_dz, self.settings.omega_m,
-                                             self.settings.hubble_h)
+            return np.pi / los_cell_size_mpc(z_center, s.cyl_native_los_dz, omega_m, s.hubble_h)
         return np.inf
 
     def _centers(self, z, xbar):
@@ -170,7 +169,7 @@ class CylindricalMetrics(Metric):
         if z is None:
             z_sorted, dist = None, np.arange(nz) * cell
         else:
-            dist = comoving_distance_mpc(z, self.settings.omega_m, self.settings.hubble_h)
+            dist = comoving_distance_mpc(z, self.omega_m(sample), self.settings.hubble_h)
             if np.any(np.diff(dist) <= 0):
                 raise ValueError(f"cylindrical: z_grid of sample {sample.id!r} must increase strictly")
             z_sorted = z
@@ -211,7 +210,7 @@ class CylindricalMetrics(Metric):
             z_center = float(np.interp(center_d, dist, z_sorted)) if z_sorted is not None else np.nan
             zc[col] = z_center
             xc[col] = float(np.interp(center_d, dist, xbar)) if xbar is not None else np.nan
-            limit = self._native_kpar(z_center) if np.isfinite(z_center) else np.inf
+            limit = self._native_kpar(z_center, self.omega_m(sample)) if np.isfinite(z_center) else np.inf
             if not self._uniform:
                 lo, hi = where
                 coarsest = float(np.max(spacing[max(lo - 1, 0):min(hi + 1, len(spacing))]))
