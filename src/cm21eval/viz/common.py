@@ -11,6 +11,7 @@ recursively, so ``--run results/`` picks up a whole tree (``<model>/<group>/<tar
 """
 from __future__ import annotations
 
+import itertools
 import json
 import warnings
 from pathlib import Path
@@ -144,13 +145,15 @@ class Catalog:
             raise SystemExit("no model has results for every target and group")
         self.models = complete
         self.style = {}
-        palette = iter(DEFAULT_COLORS)
+        palette = itertools.cycle(DEFAULT_COLORS)
         for i, m in enumerate(self.models):
             given = style.get(m, {})
             if i == 0 and not given:
                 default = {"label": m, "color": "0.15", "ls": "--"}
             else:
-                default = {"label": m, "color": next(palette), "ls": "-"}
+                default = {"label": m, "ls": "-"}
+                if "color" not in given:
+                    default["color"] = next(palette)
             self.style[m] = {**default, **given}
 
     # -- style -------------------------------------------------------------- #

@@ -186,3 +186,15 @@ def test_plot_all_on_synthetic_runs(tmp_path):
     made = {p.name for p in (tmp_path / "figs").rglob("*.png")}
     assert {"cyl_error_xhi.png", "summary_scorecard.png", "summary_spectra_xhi.png", "cone_c0.png",
             "cone_c0_deltas.png", "overview_deltas.png"} <= made
+
+
+def test_catalog_styles_many_models(tmp_path):
+    from cm21eval import report
+    from cm21eval.viz import Catalog, find_runs
+    from cm21eval.runner import ModelResult
+
+    models = [ModelResult(name=f"m{i}", info={}, metrics={"voxel": {"mse": 1.0, "n_voxels": 1}}, skipped={})
+              for i in range(15)]
+    report.write(tmp_path / "run", models, {"path": "data.json"}, Settings().to_dict())
+    cat = Catalog(find_runs([tmp_path]), style={"m3": {"label": "three", "color": "k"}}, quiet=True)
+    assert len({cat.color(m) for m in cat.models}) > 5 and cat.label("m3") == "three" and cat.color("m3") == "k"
