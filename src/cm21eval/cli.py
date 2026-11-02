@@ -6,6 +6,7 @@
     cm21eval list-metrics
     cm21eval selftest
     cm21eval demo --out demo/
+    cm21eval plot all --run results/ --out figs/
 """
 from __future__ import annotations
 
@@ -75,7 +76,23 @@ def main(argv=None) -> int:
     demo.add_argument("--shape", default="64,64,64")
     demo.add_argument("--quiet", action="store_true")
 
+    plot = sub.add_parser("plot", help="figures from result directories (needs matplotlib)")
+    plot.add_argument("kind", choices=["cyl", "gallery", "deltas", "summary", "all"])
+    plot.add_argument("--run", action="append", required=True, type=Path,
+                      help="result directory or a tree of them (repeatable)")
+    plot.add_argument("--out", type=Path, required=True)
+    plot.add_argument("--models", default=None, help="comma list and order of models (default: all)")
+    plot.add_argument("--style", type=Path, default=None,
+                      help='JSON {model: {"label": ..., "color": ..., "ls": ...}}')
+    plot.add_argument("--ids", default=None, help="comma list of sample ids for gallery/deltas")
+    plot.add_argument("--title", default="", help="data set named in figure titles")
+    plot.add_argument("--vmax", type=float, default=0.4, help="cyl: colour saturation of P_pred/P_true - 1")
+    plot.add_argument("--dead", type=float, default=None, help="cyl: white band (default: the run's cyl_dead_band)")
+    plot.add_argument("--quiet", action="store_true")
+
     args = parser.parse_args(argv)
+    if args.command == "plot":
+        return _plot(args)
     if args.command == "run":
         return _run(args)
     if args.command == "describe":
@@ -200,6 +217,28 @@ def _run(args) -> int:
         print(f"\nwrote {out}/results.json, summary.csv, report.md"
               + (", curves.npz" if (out / "curves.npz").exists() else ""))
         print(f"schema {payload['schema']}")
+    return 0
+
+
+def _plot(args) -> int:
+    from . import viz
+
+    style = json.loads(args.style.read_text()) if args.style else None
+    models = [m.strip() for m in args.models.split(",")] if args.models else None
+    ids = [i.strip() for i in args.ids.split(",")] if args.ids else None
+    catalog = viz.Catalog(viz.find_runs(args.run), models=models, style=style, quiet=args.quiet)
+    if not args.quiet:
+        print(f"models {catalog.models}; targets {catalog.targets}; groups "
+              + ", ".join(f"{t}: {len(catalog.groups[t])}" for t in catalog.targets))
+    if args.kind in ("cyl", "all"):
+        viz.plot_cylindrical(catalog, args.out, vmax=args.vmax, dead=args.dead,
+                             title=args.title or None, quiet=args.quiet)
+    if args.kind in ("gallery", "all"):
+        viz.plot_gallery(catalog, args.out / "gallery", ids=ids, quiet=args.quiet)
+    if args.kind in ("deltas", "all"):
+        viz.plot_deltas(catalog, args.out / "deltas", ids=ids, quiet=args.quiet)
+    if args.kind in ("summary", "all"):
+        viz.plot_summary(catalog, args.out, title=args.title, quiet=args.quiet)
     return 0
 
 

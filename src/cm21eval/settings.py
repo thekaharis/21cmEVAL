@@ -59,6 +59,21 @@ class Settings:
     dtb_range_mk: tuple[float, float] = (-5.0, 100.0)
     dtb_bins: int = 105
 
+    # cylindrical P(k_perp, k_par) on LOS chunks (``cylindrical``)
+    cyl_chunk_cells: int = 140                  # LOS cells per chunk, each one transverse cell long
+    cyl_stages: tuple[float, ...] = (0.9, 0.7, 0.5, 0.3, 0.1)   # true slice-mean x_HI per chunk
+    cyl_z_centers: tuple[float, ...] = ()       # fixed-redshift chunks instead of stages
+    cyl_dead_band: float = 0.1                  # |P_pred/P_true - 1| counted as "within"
+    cyl_native_cell_mpc: float | None = None    # transverse cell of a coarser native truth
+    cyl_native_los_dz: float | None = None      # native LOS planes uniform in z with this spacing
+    cyl_native_los_mpc: float | None = None     # ... or uniform in comoving distance
+
+    # stored slices for ``cm21eval plot gallery`` / ``deltas`` (``gallery``)
+    gallery_samples: int = 4                    # first N samples (ignored when gallery_ids is set)
+    gallery_ids: tuple[str, ...] = ()
+    gallery_stages: tuple[float, ...] = (0.8, 0.6, 0.4, 0.2)
+    gallery_fields: tuple[str, ...] = ("xhi", "tb")
+
     # efficiency
     warmup: int = 3
     iters: int = 10
@@ -99,6 +114,20 @@ class Settings:
             raise ValueError("xhi_range must be increasing")
         if self.warmup < 0 or self.iters < 1:
             raise ValueError("warmup >= 0 and iters >= 1")
+        if self.cyl_chunk_cells < 4:
+            raise ValueError("cyl_chunk_cells must be at least 4")
+        if not (self.cyl_stages or self.cyl_z_centers):
+            raise ValueError("set cyl_stages or cyl_z_centers")
+        if not 0 < self.cyl_dead_band < 1:
+            raise ValueError("cyl_dead_band must lie in (0, 1)")
+        for name in ("cyl_native_cell_mpc", "cyl_native_los_dz", "cyl_native_los_mpc"):
+            value = getattr(self, name)
+            if value is not None and value <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.cyl_native_los_dz is not None and self.cyl_native_los_mpc is not None:
+            raise ValueError("set at most one of cyl_native_los_dz and cyl_native_los_mpc")
+        if self.gallery_samples < 0 or not self.gallery_stages:
+            raise ValueError("gallery_samples >= 0 and at least one gallery stage")
 
     def updated(self, **values) -> "Settings":
         """Return a copy with the given fields replaced (unknown keys fail)."""
@@ -119,6 +148,7 @@ class Settings:
 _TUPLES = {
     "stage_edges", "active_range", "k_targets", "front_bands_mpc",
     "xhi_range", "partial_range", "dtb_range_mk",
+    "cyl_stages", "cyl_z_centers", "gallery_ids", "gallery_stages", "gallery_fields",
 }
 
 

@@ -194,6 +194,8 @@ truth and prediction are always paired. `active` is the last row: slices with
 | `parity` | conditional bias E[pred\|true] − true per truth bin, per-bin spread and RMSE, partial-range RMSE | `viz/parity_diagnostic.py` |
 | `radial` | isotropic 3-D P(k) ratio and coherence (cross-check; non-periodic LOS) | `util/metrics_21cm.py` |
 | `anisotropy` | cylindrical (k_perp, k_par) power ratio and coherence at z = 7/9/11 | `viz/power_spectrum_evaluation.py` |
+| `cylindrical` | full cylindrical (k_perp, k_par) power ratio and coherence maps per sample, LOS chunks at ionization stages (default x̄_HI 0.9/0.7/0.5/0.3/0.1) or fixed z, share of resolved cells within ±0.1, native-resolution limits; drawn by `cm21eval plot cyl` | `ebm21cm.native_cyl` (rhizome), `viz/power_spectrum_evaluation._cylindrical_sums` |
+| `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `cm21eval plot gallery` / `deltas` | `ebm21cm.compare_cones3d`, `ebm21cm.delta_slices` (rhizome) |
 | `efficiency` | parameters, ms per lightcone (median/p16/p84), samples/s, slices/s, peak memory | `viz/inference_speed_eval.py` |
 | `symmetry` | RMS change under a transverse x↔y swap | `viz/visualize_3d.py` |
 
@@ -224,6 +226,34 @@ truth and prediction are always paired. `active` is the last row: slices with
   before the bias equals their error.
 * **EFT** coefficients are fit per stage and compared cone by cone. A
   conditional-mean emulator usually reproduces T(k) but under-predicts P_ε.
+
+## Figures
+
+`cm21eval plot` (needs `matplotlib`, `pip install -e ".[viz]"`) draws figures from one or more
+result directories. A directory without `results.json` is searched recursively, so a tree of runs
+(`<model>/<group>/<target>/`) can be passed whole. Runs of the same target on different data are
+pooled as groups (e.g. redshift windows with one manifest each); a model must exist in every
+group. An x_HI and a T_b run of the same samples combine in the gallery.
+
+```bash
+cm21eval plot all --run results/ --out figs/ [--models ref,tuned] [--style style.json] [--title "LoReLi II test"]
+```
+
+| kind | files | content |
+|---|---|---|
+| `cyl` | `cyl_error_<target>` | P_pred/P_true − 1 over (k_perp, k_par) on log axes, white within ±`cyl_dead_band`, rows = models, columns = stages (or z); median over samples; hatched beyond the truth's native resolution, not counted |
+| `gallery` | `gallery/cone_<id>` | per stage: x_HI truth/models/model − truth (viridis, RdBu), then T_b (magma), slice RMSE per panel |
+| `deltas` | `deltas/cone_<id>_deltas`, `overview_deltas` | prediction − truth per stage (red: too neutral); overview at x̄_HI ≈ 0.4 for every sample |
+| `summary` | `summary_scorecard`, `summary_per_sample_rmse`, `summary_spectra_<target>`, `summary_bubbles`, `summary_history`, `summary_fronts`, `summary_eft_morphology`, `summary_scorecard.json` | comparative figures over models, pooled exactly over groups (voxel-weighted MSE, count-weighted fronts, medians with 16–84 % bands) |
+
+`--style` is a JSON file `{"model": {"label": "...", "color": "...", "ls": "--"}}`; by default the
+first model is drawn dark grey dashed (the baseline) and the others in distinct colours.
+
+Stage chunks (`cyl_stages`) compare like with like across data sets that reionize at different
+redshifts; fixed-z chunks (`cyl_z_centers`) can be dominated by fully neutral or fully ionized
+volumes. When the truth was interpolated from a coarser native grid, declare it
+(`cyl_native_cell_mpc`, `cyl_native_los_dz` or `cyl_native_los_mpc`) so unresolved wavenumbers are
+excluded. The stage chunks need the true x_HI: an `xhi` target, or an `xhi` input in a T_b pass.
 
 ## Configuration
 

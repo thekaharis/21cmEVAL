@@ -17,8 +17,9 @@ dependencies = [
 [project.optional-dependencies]
 torch = ["torch>=2.0"]
 hdf5 = ["h5py>=3.8"]
+viz = ["matplotlib>=3.6"]
 dev = ["pytest>=7"]
-all = ["torch>=2.0", "h5py>=3.8", "pytest>=7"]
+all = ["torch>=2.0", "h5py>=3.8", "matplotlib>=3.6", "pytest>=7"]
 
 [project.scripts]
 cm21eval = "cm21eval.cli:main"

@@ -7,10 +7,12 @@ can be added with ``@register("name")`` in any module imported before the run
 from . import (  # noqa: F401  (registration side effects)
     anisotropy,
     bubble,
+    cylindrical,
     edge,
     eft,
     efficiency,
     front,
+    gallery,
     history,
     morphology,
     observable,

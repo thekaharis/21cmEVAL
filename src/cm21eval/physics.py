@@ -596,6 +596,17 @@ def front_width(d_mpc, mean_field, lo: float = 0.1, hi: float = 0.9) -> float:
     return float(crossing(hi) - crossing(lo))
 
 
+def comoving_distance_mpc(z, omega_m: float = OMEGA_M, h: float = HUBBLE_H) -> np.ndarray:
+    """Comoving distance of each redshift from ``min(z)`` [Mpc], flat LCDM (trapezoid, 1e-6 accurate)."""
+    z = np.asarray(z, dtype=np.float64)
+    if z.size == 0:
+        return z.copy()
+    fine = np.linspace(z.min(), z.max(), max(2001, 8 * z.size))
+    inv_e = 1.0 / np.sqrt(omega_m * (1.0 + fine) ** 3 + (1.0 - omega_m))
+    chi = np.concatenate([[0.0], np.cumsum(0.5 * (inv_e[1:] + inv_e[:-1]) * np.diff(fine))])
+    return np.interp(z, fine, chi) * C_KM_S / (h * 100.0)
+
+
 def los_cell_size_mpc(z: float, dz_cell: float, omega_m: float = OMEGA_M,
                       h: float = HUBBLE_H) -> float:
     """Comoving size of one LOS cell at redshift z: dD = c dz / H(z)."""
