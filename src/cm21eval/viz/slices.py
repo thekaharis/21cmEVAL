@@ -13,6 +13,7 @@ input give both blocks); truth must agree between models.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,13 @@ import numpy as np
 from .common import pyplot, save
 
 LABEL = {"xhi": "x$_{HI}$", "tb": "T$_b$"}
+OVERVIEW_ROWS = 10
+
+
+def cone_name(sid: str) -> str:
+    """'cone12316' / 'cone_12316' / '12316' -> '12316'; other ids unchanged."""
+    m = re.fullmatch(r"(?:cone_?)?(\d+)", str(sid))
+    return m.group(1) if m else str(sid)
 UNIT = {"xhi": "", "tb": " [mK]"}
 
 
@@ -98,11 +106,12 @@ def plot_gallery(cat, out: Path, ids=None, quiet=False):
                                va="top", fontsize=8, color="w", bbox=dict(facecolor="k", alpha=0.55, lw=0))
                     if j in (n_m, per - 1):
                         fig.colorbar(im, ax=a, shrink=0.8)
-            ax[i, 0].set_ylabel(f"cone {sid}\nz = {e['z'][i]:.2f}, <x$_{{HI}}$> = {e['xbar'][i]:.2f}", fontsize=9)
+            ax[i, 0].set_ylabel(f"cone {cone_name(sid)}\nz = {e['z'][i]:.2f}, <x$_{{HI}}$> = {e['xbar'][i]:.2f}",
+                                fontsize=9)
         h, w = e["truth"][fields[0]].shape[1:]
-        fig.suptitle(f"Test cone {sid}: transverse slices at four ionization stages; numbers are slice RMSE. "
-                     f"{h}×{w} cells.", fontsize=10)
-        written.append(save(fig, Path(out), f"cone_{sid}", dpi=170, quiet=quiet))
+        fig.suptitle(f"Test cone {cone_name(sid)}: transverse slices at four ionization stages; numbers are slice "
+                     f"RMSE. {h}×{w} cells.", fontsize=10)
+        written.append(save(fig, Path(out), f"cone_{cone_name(sid)}", dpi=170, quiet=quiet))
     return written
 
 
@@ -156,11 +165,16 @@ def plot_deltas(cat, out: Path, field="xhi", ids=None, quiet=False):
         truth = e["truth"][field]
         rows = [(truth[k], {m: e["pred"][m][field][k] - truth[k] for m in names}, e["z"][k], e["xbar"][k],
                  f"x̄≈{e['stages'][k]:.1f}") for k in order]
-        written.append(page(rows, out / f"cone_{sid}_deltas.png", f"Test cone {sid}: prediction − truth per slice"))
+        written.append(page(rows, out / f"cone_{cone_name(sid)}_deltas.png",
+                            f"Test cone {cone_name(sid)}: prediction − truth per slice"))
         mid = order[len(order) // 2 - (1 if len(order) % 2 == 0 else 0)]
         overview.append((truth[mid], {m: e["pred"][m][field][mid] - truth[mid] for m in names}, e["z"][mid],
-                         e["xbar"][mid], f"cone {sid}"))
+                         e["xbar"][mid], f"cone {cone_name(sid)}"))
     if overview:
         stage = next(iter(samples.values()))["stages"][mid]
-        written.append(page(overview, out / "overview_deltas.png", f"Prediction − truth at x̄_HI ≈ {stage:.1f}"))
+        pages = [overview[i:i + OVERVIEW_ROWS] for i in range(0, len(overview), OVERVIEW_ROWS)]
+        for n, rows in enumerate(pages, 1):
+            name = "overview_deltas.png" if len(pages) == 1 else f"overview_deltas_{n}.png"
+            suffix = "" if len(pages) == 1 else f" ({n}/{len(pages)})"
+            written.append(page(rows, out / name, f"Prediction − truth at x̄_HI ≈ {stage:.1f}{suffix}"))
     return written

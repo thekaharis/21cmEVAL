@@ -186,6 +186,8 @@ def test_plot_all_on_synthetic_runs(tmp_path):
     made = {p.name for p in (tmp_path / "figs").rglob("*.png")}
     assert {"cyl_error_xhi.png", "summary_scorecard.png", "summary_spectra_xhi.png", "cone_c0.png",
             "cone_c0_deltas.png", "overview_deltas.png"} <= made
+    from cm21eval.viz.slices import cone_name
+    assert cone_name("cone12316") == "12316" == cone_name("cone_12316") and cone_name("c0") == "c0"
 
 
 def test_catalog_styles_many_models(tmp_path):
