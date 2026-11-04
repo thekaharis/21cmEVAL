@@ -53,6 +53,8 @@ class HistoryMetrics(Metric):
             "z": z,
             "tau_truth": thomson_optical_depth(z, xbar_t, **cosmology),
             "tau_pred": thomson_optical_depth(z, xbar_p, **cosmology),
+            "sample": str(sample.id),
+            "omega_m": omega,
             "history_truth": history_features(z, xbar_t),
             "history_pred": history_features(z, xbar_p),
             "history_rmse": float(np.sqrt(np.mean((xbar_p - xbar_t) ** 2))),
@@ -105,6 +107,8 @@ class HistoryMetrics(Metric):
             **{f"history_{key}_pred": np.array(
                 [r["history_pred"][key] for r in self.rows])
                for key in ("z_xhi25", "z_xhi50", "z_xhi75", "delta_z")},
+            "history_sample_ids": np.array([r["sample"] for r in self.rows]),
+            "history_omega_m": np.array([r["omega_m"] for r in self.rows]),
         }
 
 

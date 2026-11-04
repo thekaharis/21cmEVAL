@@ -121,6 +121,16 @@ class ParityMetrics(Metric):
             "n_voxels": int(self.count.sum()),
         }
 
+    def arrays(self):
+        """Raw accumulators, so ``eval21 plot parity`` can pool groups exactly."""
+        if self.count.sum() == 0:
+            return {}
+        return {"parity_count": self.count.copy(), "parity_sum_pred": self.sum_pred.copy(),
+                "parity_sum_pred2": self.sum_pred2.copy(), "parity_sum_truth": self.sum_truth.copy(),
+                "parity_sum_err2": self.sum_err2.copy(),
+                "parity_h2d": self.h2d.reshape(self.n_true, self.n_pred).copy()}
+
+
 def _f(value):
     try:
         value = float(value)

@@ -83,8 +83,14 @@ class SpectrumMetrics(Metric):
         highk_stage = np.array([
             (float(np.mean(highk[mask])) if mask.any() else np.nan)
             for mask in masks])
+        xbar = truth.mean(axis=(0, 1))
+        active = (xbar > 0.001) & (xbar < 0.999)       # fno-21cm viz/ps_coherence_highk
+        lin = self._linear_spectra(t, p)
         self.records.append({
             "sample": sample.id,
+            "lin": lin,
+            "highk_slices": np.array([float(highk[active].sum()), float(active.sum()),
+                                      float(highk.sum()), float(highk.size)]),
             "n_stage": stage_n,
             "ratio": ratio,
             "r": r,
@@ -92,6 +98,33 @@ class SpectrumMetrics(Metric):
             "d2_pred": scale * mean_pp,
             "highk_logmse": highk_stage,
         })
+
+    def _linear_spectra(self, truth, pred, n_bins=24):
+        """Radially binned auto/cross power in cycles per pixel, summed over slices.
+
+        The 2-D spectra of ``viz/ps_coherence_highk.py``: linear bins up to the per-axis
+        Nyquist (0.5 cycles/px), DC and corner modes beyond it dropped, ``norm="ortho"``.
+        Returns (3, n_bins): [pred, truth, cross] per-mode means summed over slices.
+        """
+        nx, ny = truth.shape[:2]
+        key = ("lin", nx, ny, n_bins)
+        if getattr(self, "_lin", None) is None or self._lin[0] != key:
+            radius = np.sqrt(np.fft.fftfreq(nx)[:, None] ** 2 + np.fft.rfftfreq(ny)[None, :] ** 2).ravel()
+            edges = np.linspace(0.0, 0.5, n_bins + 1)
+            index = np.digitize(radius, edges) - 1
+            index[(radius >= 0.5) | (radius == 0) | (index < 0)] = -1
+            keep = index >= 0
+            counts = np.bincount(index[keep], minlength=n_bins).astype(float)
+            self._lin = (key, index, keep, counts, 0.5 * (edges[:-1] + edges[1:]))
+        _, index, keep, counts, _ = self._lin
+        fp = np.fft.rfft2(pred, axes=(0, 1), norm="ortho")
+        ft = np.fft.rfft2(truth, axes=(0, 1), norm="ortho")
+        out = []
+        for field in ((fp * fp.conj()).real, (ft * ft.conj()).real, (fp * ft.conj()).real):
+            flat = field.sum(axis=2).ravel()
+            acc = np.bincount(index[keep], weights=flat[keep], minlength=n_bins)
+            out.append(acc / np.maximum(counts, 1.0))
+        return np.stack(out)
 
     def _highk_matrix(self, nx, ny):
         key = (nx, ny, self.settings.highk_k_min, self.settings.highk_bins)
@@ -202,6 +235,14 @@ class SpectrumMetrics(Metric):
             out[f"spectrum_coherence_{token}"] = r[:, row]
             out[f"spectrum_delta2_truth_{token}"] = d2t[:, row]
             out[f"spectrum_delta2_pred_{token}"] = d2p[:, row]
+        # ps_coherence_highk layout: linear cycles/px spectra and per-slice highk sums.
+        if all("lin" in r for r in self.records):
+            out["spectrum_lin_k"] = self._lin[4]
+            out["spectrum_lin_power"] = np.stack([r["lin"] for r in self.records])
+            out["spectrum_highk_slices"] = np.stack([r["highk_slices"] for r in self.records])
+            out["spectrum_highk_k_min"] = np.asarray(self.settings.highk_k_min)
+            out["spectrum_sample_ids"] = np.array([str(r["sample"]) for r in self.records])
+            out["spectrum_n_stage"] = np.stack([r["n_stage"] for r in self.records])
         return out
 
 

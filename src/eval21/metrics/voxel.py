@@ -142,4 +142,9 @@ class VoxelMetrics(Metric):
         return {
             "rmse_per_sample": np.asarray(self.per_sample_rmse),
             "r2_per_sample": np.asarray(self.per_sample_r2),
+            # Pooling sums for ``eval21 plot report`` (fno_xhi2d.final_report keys over groups).
+            "voxel_sums": np.array([self.n, self.ss_res, self.sum_y, self.sum_y2, self.grad_ss,
+                                    self.grad_n, self.highk_pred, self.highk_truth,
+                                    self.highk_cross, self.sum_history_abs,
+                                    self.history_samples], dtype=np.float64),
         }

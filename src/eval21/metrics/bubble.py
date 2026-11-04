@@ -245,6 +245,20 @@ class BubbleSizeMetrics(Metric):
                         if row["stages"][j] is not None]
                 if rows:
                     out[f"bubble_{name}_{label}"] = np.stack(rows)
+        # Per-sample stage scalars (n_samples, n_rows), NaN where a stage has no slices: what
+        # ``eval21 plot bubble`` needs to pool groups like fno-21cm's bubble_size_evaluation.
+        n_rows = len(labels)
+        for key in ("n_slices", "w1", "js", "truth_mean", "pred_mean", "censored_truth",
+                    "censored_pred", "underflow_truth", "underflow_pred", "ionized_truth",
+                    "ionized_pred", "median_hit_truth_mpc", "median_hit_pred_mpc"):
+            values = np.full((len(self.per_sample), n_rows), np.nan)
+            for i, row in enumerate(self.per_sample):
+                for j, stage in enumerate(row["stages"]):
+                    if stage is not None:
+                        values[i, j] = stage[key]
+            out[f"bubble_stage_{key}"] = values
+        out["bubble_radius_edges_mpc"] = self.edges
+        out["bubble_sample_ids"] = np.array([str(r["sample"]) for r in self.per_sample])
         return out
 
 

@@ -192,7 +192,30 @@ class AnisotropyMetrics(Metric):
                 if np.isfinite(median).any():
                     out[f"anisotropy_ratio_z{z_label:g}"] = median
                 out[f"anisotropy_kpar_z{z_label:g}"] = kpar
+        out.update(self._suite_arrays())
         return out
+
+    def _suite_arrays(self):
+        """Per-sample cylindrical maps (n_samples, n_chunks, n_kpar, n_kperp) for
+        ``eval21 plot power`` (ps_cyl_ratio / ps_cyl_r), pooled over groups there; chunks
+        with ~uniform truth are NaN, as in fno-21cm's power_spectrum_evaluation."""
+        n_chunks = max(len(row["maps"]) for row in self.rows)
+        if n_chunks == 0 or any(len(row["maps"]) != n_chunks for row in self.rows):
+            return {}
+        shape = self.rows[0]["maps"][0]["pt"].shape
+        ratio = np.full((len(self.rows), n_chunks) + shape, np.nan)
+        coherence = np.full_like(ratio, np.nan)
+        z = np.full((len(self.rows), n_chunks), np.nan)
+        kpar = np.full((len(self.rows), n_chunks, shape[0]), np.nan)
+        for i, row in enumerate(self.rows):
+            for c, record in enumerate(row["maps"]):
+                z[i, c] = record["z"]
+                kpar[i, c] = record["kpar"]
+                if record["ok"] and record["pt"].shape == shape:
+                    ratio[i, c], coherence[i, c] = safe_ratio(record["pt"], record["pp"], record["cross"])
+        return {"anisotropy_cyl_ratio": ratio, "anisotropy_cyl_r": coherence, "anisotropy_cyl_z": z,
+                "anisotropy_cyl_kpar": kpar, "anisotropy_cyl_z_target": np.asarray(self.chunk_z, float),
+                "anisotropy_kperp_edges": self._binner[1].edges}
 
 
 def _nanmedian(values, axis=0):

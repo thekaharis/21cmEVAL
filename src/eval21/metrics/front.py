@@ -74,6 +74,7 @@ class FrontMetrics(Metric):
         edges = self.edges
         sample_band = {}
         sample_total_sq = 0.0
+        sample_total_all = 0.0          # over every voxel of a front slice (fno-21cm errfrac)
         sample_n_front = 0
 
         for k in range(truth.shape[2]):
@@ -82,6 +83,7 @@ class FrontMetrics(Metric):
             distance = signed_distance_2d(mask, sampling)
             if not np.isfinite(distance).any():
                 continue
+            sample_total_all += float(np.sum(error[:, :, k][np.isfinite(distance)] ** 2))
             index = np.digitize(distance.ravel(), edges) - 1
             valid = (index >= 0) & (index < len(self.centers))
             if not valid.any():
@@ -131,12 +133,14 @@ class FrontMetrics(Metric):
                 self.saturated_n += int(saturated.sum())
 
         self.total_sq_err += sample_total_sq
-        record = {"n_front_vox": sample_n_front}
+        record = {"n_front_vox": sample_n_front, "sample": str(sample.id)}
         for band, (ss, gs, n) in sample_band.items():
             record[f"L2_band{band:g}"] = np.sqrt(ss / n) if n else np.nan
             record[f"H1_band{band:g}"] = np.sqrt(gs / n) if n else np.nan
             record[f"errfrac_band{band:g}"] = (
                 ss / sample_total_sq if sample_total_sq > 0 else np.nan)
+            record[f"errfrac_all_band{band:g}"] = (
+                ss / sample_total_all if sample_total_all > 0 else np.nan)
         self.per_sample.append(record)
 
         profile = self._profile()
@@ -228,7 +232,20 @@ class FrontMetrics(Metric):
             "front_counts": self.n,
             "front_width_truth": np.asarray([w["truth"] for w in self.widths]),
             "front_width_pred": np.asarray([w["pred"] for w in self.widths]),
+            **self._band_arrays("front"),
         }
+
+    def _band_arrays(self, prefix):
+        """Per-sample band metrics for ``eval21 plot edge`` (csv means and the paired
+        bootstrap of fno-21cm's boundary_band_diagnostic). ``errfrac`` there divides by the
+        squared error of every voxel of the front slices, not only those within d_max."""
+        out = {f"{prefix}_sample_ids": np.array([r.get("sample", "") for r in self.per_sample]),
+               f"{prefix}_n_front_vox": np.array([r["n_front_vox"] for r in self.per_sample], dtype=np.int64)}
+        for band in self.settings.front_bands_mpc:
+            for name, key in (("L2", "L2_band"), ("H1", "H1_band"), ("errfrac", "errfrac_all_band")):
+                out[f"{prefix}_band_{name}_{band:g}"] = np.array(
+                    [r.get(f"{key}{band:g}", np.nan) for r in self.per_sample], dtype=np.float64)
+        return out
 
 
 def _nanmedian(values):
