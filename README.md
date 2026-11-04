@@ -1,7 +1,7 @@
 # 21cmEVAL
 
 <p align="center">
-  <img src="docs/collage.png" alt="A spread of eval21 figures: cylindrical power error, slice gallery, bubble-size distributions, power spectrum and coherence, PDFs with W1, parity and power-ratio curves by reionization stage" width="100%">
+  <img src="docs/collage.png" alt="A spread of eval21 figures: cylindrical power error, slice gallery, bubble-size distributions, PDFs with W1, parity and power-ratio curves by reionization stage" width="100%">
 </p>
 
 End-to-end evaluation for 21cm field emulators. Point it at a model and a set

@@ -3,7 +3,7 @@
     python docs/readme_collage.py FIGURE_DIR [--out docs/collage.png]
 
 FIGURE_DIR holds the PNGs of an `eval21 plot all` run (the gallery page in FIGURE_DIR/gallery/).
-Cards are listed back to front, axis-aligned (angle 0); positions are fractions of the canvas.
+Cards are listed back to front; positions are fractions of the canvas, angles in degrees.
 Needs Pillow.
 """
 from __future__ import annotations
@@ -13,15 +13,14 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-CANVAS = (2800, 1800)
+CANVAS = (2800, 1750)
 #        file (glob, first match)          width  centre x  centre y  angle
-CARDS = [("cyl_error_tb.png",              1060,   0.24,     0.24,     0.0),
-         ("bubble_size_distribution.png",   880,   0.77,     0.24,     0.0),
-         ("ps_overlay_tb.png",             1000,   0.76,     0.53,     0.0),
-         ("physical_pdfs.png",             1100,   0.27,     0.72,     0.0),
-         ("ps_stage_curves_tb.png",         700,   0.80,     0.79,     0.0),
-         ("gallery/cone_*.png",            1250,   0.48,     0.45,     0.0),
-         ("parity_overlay*.png",            420,   0.58,     0.80,     0.0)]
+CARDS = [("cyl_error_tb.png",              1080,   0.28,     0.30,    -5.0),
+         ("bubble_size_distribution.png",   920,   0.74,     0.29,     4.5),
+         ("ps_stage_curves_tb.png",         720,   0.78,     0.70,    -3.5),
+         ("physical_pdfs.png",             1140,   0.34,     0.71,     2.5),
+         ("gallery/cone_*.png",            1300,   0.53,     0.47,    -1.0),
+         ("parity_overlay*.png",            430,   0.635,    0.76,     5.5)]
 
 PAPER_MARGIN = 0.022          # white border around each figure, fraction of the card width
 SHADOW_OFFSET = (16, 24)
