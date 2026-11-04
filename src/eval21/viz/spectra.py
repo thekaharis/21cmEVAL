@@ -515,8 +515,9 @@ def _plot_cyl(ctx, kind):
     return written
 
 
-@figure("ps_cyl_ratio", group="spectra",
-        help="log2(P_pred/P_true) over (k_perp, k_par), rows = models (fno-21cm ps_cyl_ratio)")
+@figure("ps_cyl_ratio", group="spectra", default=False,
+        help="log2(P_pred/P_true) over (k_perp, k_par), rows = models (fno-21cm ps_cyl_ratio); "
+             "only on request, `cyl` is the standard cylindrical figure")
 def ps_cyl_ratio(ctx):
     return _plot_cyl(ctx, "ratio")
 

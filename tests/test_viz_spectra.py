@@ -31,6 +31,15 @@ def test_spectra_figures_on_fixture(tmp_path, viz_fixture):
         assert (tmp_path / f"{name}_xhi.csv").read_text().count("\n") >= 3
 
 
+def test_log_cyl_ratio_only_by_name(tmp_path, viz_fixture):
+    pytest.importorskip("matplotlib")
+    from eval21.viz import run
+
+    done = run(["spectra"], _ctx(tmp_path, [viz_fixture / "results"]))
+    assert "ps_cyl_ratio" not in done and "cyl" in done          # the linear map is the standard one
+    assert not (tmp_path / "ps_cyl_ratio_tb.png").exists()
+
+
 def test_spectra_options_and_anisotropy_source(tmp_path, viz_fixture):
     FIXTURE = viz_fixture
     pytest.importorskip("matplotlib")
