@@ -1,4 +1,4 @@
-"""Power-spectrum figures (viz/spectra.py) on the synthetic fixture runs."""
+"""Power-spectrum figures (visualization/spectra.py) on the synthetic fixture runs."""
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +8,7 @@ FIGURES = ("ps_overlay", "ps_stage_curves", "ps_cyl_r", "cyl_anisotropy_decompos
            "ps_coherence_highk", "ps_plane3d")
 
 def _ctx(tmp_path, runs, options=None, models=None):
-    from eval21.viz import Catalog, PlotContext, find_runs
+    from eval21.visualization import Catalog, PlotContext, find_runs
 
     cat = Catalog(find_runs(runs), models=models, quiet=True)
     return PlotContext(catalog=cat, out=tmp_path, options=options or {}, quiet=True)
@@ -17,7 +17,7 @@ def _ctx(tmp_path, runs, options=None, models=None):
 def test_spectra_figures_on_fixture(tmp_path, viz_fixture):
     FIXTURE = viz_fixture
     pytest.importorskip("matplotlib")
-    from eval21.viz import load_all, run
+    from eval21.visualization import load_all, run
 
     figures = load_all()
     assert {n for n, f in figures.items() if f.group == "spectra"} >= set(FIGURES)
@@ -34,7 +34,7 @@ def test_spectra_figures_on_fixture(tmp_path, viz_fixture):
 def test_spectra_options_and_anisotropy_source(tmp_path, viz_fixture):
     FIXTURE = viz_fixture
     pytest.importorskip("matplotlib")
-    from eval21.viz import run
+    from eval21.visualization import run
 
     ctx = _ctx(tmp_path, [FIXTURE / "results" / "sharp" / "xhi", FIXTURE / "results" / "blurry" / "xhi"],
                options={"cyl_source": "anisotropy", "model": "blurry", "zbin": 0})
@@ -49,7 +49,7 @@ def test_spectra_options_and_anisotropy_source(tmp_path, viz_fixture):
 def test_spectra_generative_run_drops_coherence(tmp_path, viz_fixture):
     FIXTURE = viz_fixture
     pytest.importorskip("matplotlib")
-    from eval21.viz import run
+    from eval21.visualization import run
 
     if not (FIXTURE / "results_gen").exists():
         pytest.skip("generative fixture not available")
@@ -61,7 +61,7 @@ def test_spectra_generative_run_drops_coherence(tmp_path, viz_fixture):
 
 
 def test_decomposition_and_crossing_helpers():
-    from eval21.viz.spectra import coherence_scale, k_crossing, pretty_stage, two_way_decomposition
+    from eval21.visualization.spectra import coherence_scale, k_crossing, pretty_stage, two_way_decomposition
 
     par = np.outer(np.arange(4.0), np.ones(5))                  # varies along k_par only
     assert two_way_decomposition(par)["par_share"] == pytest.approx(1.0)

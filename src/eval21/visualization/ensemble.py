@@ -13,7 +13,7 @@ ensemble_draws         per stored sample: truth, ensemble mean, ensemble std and
                        variety looks like next to the truth
 =====================  ==========================================================  =========
 
-Both follow the gallery's conventions (``viz/slices.py``): stages from the true slice-mean
+Both follow the gallery's conventions (``visualization/slices.py``): stages from the true slice-mean
 x_HI, one row per stage, a colour bar per column.
 """
 from __future__ import annotations

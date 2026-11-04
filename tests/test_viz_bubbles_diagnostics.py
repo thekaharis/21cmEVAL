@@ -1,4 +1,4 @@
-"""Figures of viz/bubbles.py and viz/diagnostics.py built on the shared fixture."""
+"""Figures of visualization/bubbles.py and visualization/diagnostics.py built on the shared fixture."""
 import json
 import shutil
 from pathlib import Path
@@ -8,8 +8,8 @@ import pytest
 pytest.importorskip("matplotlib")
 
 from eval21.store import PredictionStore  # noqa: E402
-from eval21.viz import registry  # noqa: E402
-from eval21.viz.common import Catalog, find_runs  # noqa: E402
+from eval21.visualization import registry  # noqa: E402
+from eval21.visualization.common import Catalog, find_runs  # noqa: E402
 
 
 FIGURES = {

@@ -37,7 +37,7 @@ class Figure:
 class PlotContext:
     """Everything a figure function gets."""
 
-    catalog: object                      # viz.common.Catalog (results, labels, colours)
+    catalog: object                      # visualization.common.Catalog (results, labels, colours)
     out: Path                            # output directory for this figure set
     store: object = None                 # store.PredictionStore or None
     ids: list | None = None              # sample ids requested with --ids

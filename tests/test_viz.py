@@ -186,13 +186,13 @@ def test_plot_all_on_synthetic_runs(tmp_path):
     made = {p.name for p in (tmp_path / "figs").rglob("*.png")}
     assert {"cyl_error_xhi.png", "summary_scorecard.png", "summary_spectra_xhi.png", "cone_c0.png",
             "cone_c0_deltas.png", "overview_deltas.png"} <= made
-    from eval21.viz.slices import cone_name
+    from eval21.visualization.slices import cone_name
     assert cone_name("cone12316") == "12316" == cone_name("cone_12316") and cone_name("c0") == "c0"
 
 
 def test_catalog_styles_many_models(tmp_path):
     from eval21 import report
-    from eval21.viz import Catalog, find_runs
+    from eval21.visualization import Catalog, find_runs
     from eval21.runner import ModelResult
 
     models = [ModelResult(name=f"m{i}", info={}, metrics={"voxel": {"mse": 1.0, "n_voxels": 1}}, skipped={})

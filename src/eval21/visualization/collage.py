@@ -1,6 +1,6 @@
 """Build docs/collage.png, the README header: eval21 figures spread like printouts on a table.
 
-    python docs/readme_collage.py FIGURE_DIR [--out docs/collage.png]
+    python -m eval21.visualization.collage FIGURE_DIR [--out docs/collage.png]
 
 FIGURE_DIR holds the PNGs of an `eval21 plot all` run (the gallery page in FIGURE_DIR/gallery/).
 Cards are listed back to front; positions are fractions of the canvas, angles in degrees.
@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-
-from PIL import Image, ImageDraw, ImageFilter
 
 CANVAS = (2800, 1750)
 #        file (glob, first match)          width  centre x  centre y  angle
@@ -28,8 +26,10 @@ SHADOW_BLUR = 22
 SHADOW_ALPHA = 0.42
 
 
-def card(path: Path, width: int, angle: float) -> tuple[Image.Image, Image.Image]:
+def card(path: Path, width: int, angle: float) -> tuple:
     """The figure on a sheet of paper, rotated; returns (card RGBA, shadow RGBA) of equal size."""
+    from PIL import Image, ImageDraw, ImageFilter
+
     fig = Image.open(path).convert("RGB")
     fig = fig.resize((width, round(fig.height * width / fig.width)), Image.LANCZOS)
     m = max(8, round(PAPER_MARGIN * width))
@@ -51,9 +51,10 @@ def card(path: Path, width: int, angle: float) -> tuple[Image.Image, Image.Image
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("figures", type=Path)
-    ap.add_argument("--out", type=Path, default=Path(__file__).with_name("collage.png"))
+    ap.add_argument("--out", type=Path, default=Path("docs/collage.png"))
     ap.add_argument("--width", type=int, default=1600, help="output width in px")
     args = ap.parse_args(argv)
+    from PIL import Image
 
     canvas = Image.new("RGBA", CANVAS, (0, 0, 0, 0))     # transparent: works on light and dark pages
     for pattern, width, cx, cy, angle in CARDS:
@@ -73,7 +74,7 @@ def main(argv=None):
     print("wrote", args.out, canvas.size)
 
 
-def _paste(canvas: Image.Image, layer: Image.Image, xy) -> None:
+def _paste(canvas, layer, xy) -> None:
     """alpha_composite that tolerates layers hanging over the canvas edge."""
     x, y = xy
     left, top = max(0, -x), max(0, -y)

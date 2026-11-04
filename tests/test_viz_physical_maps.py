@@ -1,4 +1,4 @@
-"""Physical-statistics figures (viz/physical.py) and map figures (viz/maps.py) on the fixture."""
+"""Physical-statistics figures (visualization/physical.py) and map figures (visualization/maps.py) on the fixture."""
 from __future__ import annotations
 
 import pytest
@@ -6,8 +6,8 @@ import pytest
 pytest.importorskip("matplotlib")
 
 from eval21.store import PredictionStore  # noqa: E402
-from eval21.viz import registry  # noqa: E402
-from eval21.viz.common import Catalog, find_runs  # noqa: E402
+from eval21.visualization import registry  # noqa: E402
+from eval21.visualization.common import Catalog, find_runs  # noqa: E402
 
 # figures that may legitimately skip on the fixture, with the reason they must give
 EXPECTED_SKIPS = {"params_vs_accuracy": "parameter counts"}

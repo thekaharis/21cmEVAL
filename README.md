@@ -23,6 +23,10 @@ eval21 demo --out demo          # synthetic data + toy model, ~10 s
 eval21 selftest                 # analytic checks, no data needed
 ```
 
+Full documentation is in [`docs/`](docs/index.md): architecture, the complete CLI reference,
+data formats, every metric definition, adapters, the report schema, the figure catalogue and
+the API reference.
+
 ## Install
 
 ```bash
@@ -261,6 +265,8 @@ eval21 run --data cubes.h5 --model gen=python:my_generator.py --draws 16 --mode 
 
 ## Metrics
 
+Every definition, result key and setting is documented in [`docs/metrics.md`](docs/metrics.md).
+
 Stage-resolved metrics bin LOS slices by the **truth** slice mean x_HI, so
 truth and prediction are always paired. `active` is the last row: slices with
 `0.05 <= xbar_HI <= 0.95`.
@@ -315,6 +321,9 @@ truth and prediction are always paired. `active` is the last row: slices with
 
 ## Figures
 
+The full catalogue — every figure with its group, inputs, output files and options — is in
+[`docs/visualization.md`](docs/visualization.md).
+
 `eval21 plot` (needs `matplotlib`, `pip install -e ".[viz]"`) draws figures from one or more
 result directories. A directory without `results.json` is searched recursively, so a tree of runs
 (`<model>/<group>/<target>/`) can be passed whole. Runs of the same target on different data are
@@ -328,7 +337,7 @@ eval21 plot spectra maps --run results/ --out figs/ --opt frames=24      # group
 ```
 
 Every figure is a function registered with `@figure(name, group=..., needs=...)` in
-`eval21/viz/` (a new figure is one decorated function). Figures marked *store* draw cube slices
+`eval21/visualization/` (a new figure is one decorated function). Figures marked *store* draw cube slices
 and need the prediction store written by `eval21 run --save-predictions DIR` (x_HI and T_b runs
 may share one DIR; `plot` finds `predictions/` next to the results or takes `--store`); without
 it they are skipped with that reason, as is any figure whose metric was not run. All figures are
@@ -396,12 +405,12 @@ first model is drawn dark grey dashed (the baseline) and the others in distinct 
 
 Layout conventions, so long model labels stay readable and figures stay comparable:
 
-- **One model key per figure**, above the panels and outside the axes (`viz.common.shared_legend`):
+- **One model key per figure**, above the panels and outside the axes (`visualization.common.shared_legend`):
   truth, then each model with its line sample, then figure-wide style keys (bands, markers,
   reference lines). Panels carry no model legends.
 - **Per-panel statistics** (W1, |Δτ|, front widths, k(r < 0.9), …) sit in one line under the
   panel's x label as `label ── value  - - value`, drawn in each model's colour and line style
-  (`viz.common.pane_values`).
+  (`visualization.common.pane_values`).
 - **Image grids** (maps, slices, cyl maps) name models in wrapped panel titles or row labels.
 - **Cylindrical (k⊥, k∥) maps are square.**
 - Scatter figures name their points through the shared key; `--opt point_labels=1` also writes
@@ -482,11 +491,15 @@ src/eval21/
 ├── registry.py       # metric plugins by name
 ├── metrics/          # one module per family, all streaming accumulators
 ├── adapters/         # python, torch, command, fno21cm, synthetic
-├── data/             # npz + manifest, hdf5 cube cache, synthetic
+├── data/             # npz + manifest, hdf5 cube cache, eval21 cube cache, synthetic
+├── build/            # simulation folder -> eval21 cube cache (HDF5)
+├── store.py          # prediction cubes for map figures
+├── visualization/    # figure registry and every figure (matplotlib, optional)
 ├── runner.py         # one pass per model, skip reporting, timing
 ├── report.py         # JSON / CSV / Markdown / NPZ
 ├── cli.py
 └── selftest.py       # analytic checks with known answers
+docs/                 # architecture, CLI, data, metrics, adapters, reports, figures, API
 ```
 
 * **One pass.** Every enabled metric updates from the same prediction.

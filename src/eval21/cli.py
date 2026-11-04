@@ -295,11 +295,11 @@ def _run(args) -> int:
 
 
 def _plot(args) -> int:
-    from . import viz
+    from . import visualization
     from .store import PredictionStore
 
     if args.figures == ["list"]:
-        figures = viz.load_all()
+        figures = visualization.load_all()
         for group in sorted({f.group for f in figures.values()}):
             print(f"[{group}]")
             for f in figures.values():
@@ -311,7 +311,7 @@ def _plot(args) -> int:
     style = json.loads(args.style.read_text()) if args.style else None
     models = [m.strip() for m in args.models.split(",")] if args.models else None
     ids = [i.strip() for i in args.ids.split(",")] if args.ids else None
-    catalog = viz.Catalog(viz.find_runs(args.run), models=models, style=style, quiet=args.quiet)
+    catalog = visualization.Catalog(visualization.find_runs(args.run), models=models, style=style, quiet=args.quiet)
     options = {}
     for item in args.opt:
         key, sep, value = item.partition("=")
@@ -333,9 +333,9 @@ def _plot(args) -> int:
         print(f"models {catalog.models}; targets {catalog.targets}; groups "
               + ", ".join(f"{t}: {len(catalog.groups[t])}" for t in catalog.targets)
               + (f"; store {store.dir} ({len(store.samples)} samples)" if store else "; no prediction store"))
-    ctx = viz.PlotContext(catalog=catalog, out=args.out, store=store, ids=ids, title=args.title,
+    ctx = visualization.PlotContext(catalog=catalog, out=args.out, store=store, ids=ids, title=args.title,
                           options=options, quiet=args.quiet)
-    viz.run(args.figures, ctx)
+    visualization.run(args.figures, ctx)
     return 0
 
 

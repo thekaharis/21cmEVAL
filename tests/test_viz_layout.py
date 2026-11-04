@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from eval21.viz.common import model_handles, pane_values, shared_legend, style_key, wrap_label  # noqa: E402
+from eval21.visualization.common import model_handles, pane_values, shared_legend, style_key, wrap_label  # noqa: E402
 
 
 class _Cat:
@@ -23,7 +23,7 @@ class _Cat:
 
 
 def _figure(tmp_path):
-    from eval21.viz.common import _place_below_boxes, _place_shared_legend
+    from eval21.visualization.common import _place_below_boxes, _place_shared_legend
 
     fig, axes = plt.subplots(2, 3, figsize=(9, 5))
     for ax in axes.ravel():
@@ -73,10 +73,10 @@ def test_wrap_label():
 
 
 def test_cyl_maps_square(viz_fixture, tmp_path, monkeypatch):
-    import eval21.viz.cylindrical as cylindrical
-    import eval21.viz.spectra as spectra
-    from eval21.viz import registry
-    from eval21.viz.common import Catalog, find_runs
+    import eval21.visualization.cylindrical as cylindrical
+    import eval21.visualization.spectra as spectra
+    from eval21.visualization import registry
+    from eval21.visualization.common import Catalog, find_runs
 
     cat = Catalog(find_runs([viz_fixture / "results"]), quiet=True)
     ctx = registry.PlotContext(catalog=cat, out=tmp_path, quiet=True)
