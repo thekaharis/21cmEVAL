@@ -1,15 +1,21 @@
 # 21cmEVAL
 
+<p align="center">
+  <img src="docs/collage.png" alt="A spread of eval21 figures: cylindrical power error, slice gallery, bubble-size distributions, PDFs with W1, parity and power-ratio curves by reionization stage" width="100%">
+</p>
+
 End-to-end evaluation for 21cm field emulators. Point it at a model and a set
 of lightcones: it runs inference once and reports every diagnostic used to
-compare the models in `fno-21cm` — voxel accuracy, scale-resolved power,
-bubble sizes, reionization history, the 21-cm observable, EFT bias terms,
-ionization-front sharpness, and inference cost.
+compare the models in [fno-21cm](https://github.com/thekaharis/fno-21cm) and
+[rhizome](https://github.com/thekaharis/rhizome-neural-operator) — voxel accuracy,
+scale-resolved and cylindrical power, bubble sizes, reionization history, the 21-cm
+observable, EFT bias terms, ionization-front sharpness, and inference cost — and draws
+the figures of both projects from the results.
 
 The suite is model-agnostic by construction. A model is anything that maps a
 sample to named 3-D arrays; adapters exist for plain Python functions,
 PyTorch modules, external programs (read npz / write npz), and fno-21cm
-checkpoints. Metrics are numpy-only, streaming accumulators, so a 200-cone
+checkpoints (rhizome models run through the Python adapter). Metrics are numpy-only, streaming accumulators, so a 200-cone
 sweep costs one forward pass and constant memory.
 
 ```
@@ -259,7 +265,7 @@ Stage-resolved metrics bin LOS slices by the **truth** slice mean x_HI, so
 truth and prediction are always paired. `active` is the last row: slices with
 `0.05 <= xbar_HI <= 0.95`.
 
-| metric | reports | source in `fno-21cm` |
+| metric | reports | source (`fno-21cm` paths unless marked rhizome) |
 |---|---|---|
 | `voxel` | RMSE, MSE, MAE, bias, R², Pearson r, R² per sample (mean/p16/p84), forward-difference gradient RMSE, per-cube global-history MAE, global high-k power ratio/coherence | `viz/rmse_r2_eval.py`, `util/multifield_metrics.py`, `fno_xhi2d.py` |
 | `edge` | transverse edge vs interior RMSE, active-window RMSE, global-history RMSE | `util/metrics_21cm.py`, `viz/physical_evaluation.py` |
@@ -500,8 +506,8 @@ src/eval21/
 ## What this suite does not do
 
 * Train or fine-tune models, or convert checkpoints between architectures.
-* Produce the PNG dashboards from `fno-21cm/viz` — metrics are numbers here;
-  plotting belongs to the analysis notebook of the paper.
+* Plot model internals (spectral weights, gates, training curves): `eval21 plot`
+  draws evaluation figures only.
 * Evaluate the LOS resampling grid itself (`viz/los_grid_evaluation.py`); that
   is a dataset diagnostic, not a model score.
 * Score several output fields in one pass. Multifield runs (x_HI, δT_b,
@@ -514,7 +520,7 @@ src/eval21/
 ## Tests
 
 ```bash
-python -m pytest          # 92 tests, ~2 s, no data and no GPU
+python -m pytest          # ~130 tests, a few minutes (figure tests build a small synthetic fixture), no data and no GPU
 eval21 selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code
