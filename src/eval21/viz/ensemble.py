@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .common import field_name, pyplot, save
+from .common import field_name, model_handles, pyplot, save, shared_legend, style_key
 from .registry import SkipFigure, figure
 from .slices import cone_name
 
@@ -98,26 +98,29 @@ def ensemble_calibration(ctx):
             for e in _ensemble(cat, target, m)[:1]:
                 if "voxel" in e:
                     for level in (50, 90):
-                        names.append(f"{cat.label(m)}\nvoxel {level}")
+                        names.append(f"voxel {level} %")
                         observed.append(e["voxel"][f"coverage{level}"])
                         nominal.append(e["voxel"][f"coverage{level}_nominal"])
                         colors.append(cat.color(m))
                 for family, s in e.get("statistics", {}).items():
-                    names.append(f"{cat.label(m)}\n{family} 68")
+                    names.append(f"{FAMILY_LABELS.get(family, family)} 68 %")
                     observed.append(s["coverage68"])
                     nominal.append(s["coverage68_nominal"])
                     colors.append(cat.color(m))
         y = np.arange(len(names))
         ax.barh(y, observed, color=colors, alpha=0.7)
         ax.scatter(nominal, y, marker="|", s=200, color="k", label="nominal", zorder=3)
-        ax.set_yticks(y, names, fontsize=6)
+        ax.set_yticks(y, names, fontsize=7)
         ax.set(xlim=(0, 1), xlabel="coverage", title="coverage vs nominal")
         ax.invert_yaxis()
-        axes[0].legend(fontsize=7, frameon=False)
+        # bar colour = model (shared key above the panels), black tick = nominal coverage
         n_draws = sorted({e["n_draws"] for m in models for e in _ensemble(cat, target, m)})
         fig.suptitle(f"{field_name(target)} ensemble calibration ({'/'.join(map(str, n_draws))} draws"
                      + (f", {ctx.title}" if ctx.title else "") + ")", fontsize=10)
         fig.tight_layout()
+        shared_legend(fig, handles=model_handles(cat, models=models, truth=False),
+                      extra=style_key([("nominal coverage", {"marker": "|", "ms": 12, "color": "k"}),
+                                       ("ideal (flat / 1)", {"ls": ":", "color": "0.5", "lw": 0.8})]))
         written.append(save(fig, ctx.out, f"ensemble_calibration_{target}", quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no model was run with --draws N (no 'ensemble' results)")

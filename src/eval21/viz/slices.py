@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from .registry import figure
-from .common import pyplot, save
+from .common import pyplot, save, wrap_label
 
 LABEL = {"xhi": "x$_{HI}$", "tb": "T$_b$"}
 OVERVIEW_ROWS = 10
@@ -69,7 +69,7 @@ def plot_gallery(cat, out: Path, ids=None, quiet=False):
             print("gallery: no stored slices (run with --metrics ...,gallery)")
         return []
     names, n_m, written = cat.models, len(cat.models), []
-    label = lambda m: cat.label(m)
+    label = lambda m: wrap_label(cat.label(m), 28)
     for sid, e in samples.items():
         if ids and sid not in ids:
             continue
@@ -146,7 +146,7 @@ def plot_deltas(cat, out: Path, field="xhi", ids=None, quiet=False):
                 a.set_xticks([])
                 a.set_yticks([])
         for j, name in enumerate([f"truth {field if field != 'xhi' else 'x_HI'}"]
-                                 + [f"{cat.label(m)}\nprediction − truth" for m in names]):
+                                 + [f"{wrap_label(cat.label(m), 28)}\nprediction − truth" for m in names]):
             axes[0, j].set_title(name, fontsize=9)
         fig.suptitle(title, fontsize=10)
         fig.tight_layout(rect=(0, 0, 0.86, 0.98))

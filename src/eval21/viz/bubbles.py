@@ -40,7 +40,7 @@ import warnings
 
 import numpy as np
 
-from .common import pyplot, save
+from .common import model_handles, pyplot, save, shared_legend, style_key
 from .registry import SkipFigure, figure
 
 TARGET = "xhi"
@@ -222,11 +222,12 @@ def bubble_size_distribution(ctx):
             ax.grid(alpha=0.2)
         for ax in axes[len(labels):]:
             ax.set_visible(False)
-        axes[0].legend(fontsize=9)
-        axes[0].text(0.02, 0.98, "v: no ionized pixels   ^: censored at box length",
-                     transform=axes[0].transAxes, va="top", fontsize=8)
         fig.suptitle(_title("Transverse mean-free-path ionized-bubble distributions", ctx))
         fig.tight_layout()
+        shared_legend(fig, handles=model_handles(cat), fontsize=9,
+                      extra=style_key([("16–84 % over cones", {"kind": "band", "color": "0.5", "alpha": 0.25}),
+                                       ("no ionized pixels", {"marker": "v", "ms": 6}),
+                                       ("censored at box length", {"marker": "^", "ms": 6})]))
         written.append(save(fig, ctx.out, f"bubble_size_distribution{suffix}", dpi=180, quiet=ctx.quiet))
     return written
 
@@ -249,10 +250,11 @@ def _bars(ctx, data, stages, labels_fn, figsize, rotation, title0, legend_kw, na
     for ax in axes:
         ax.set_xticks(x, [labels_fn(labels[i]) for i in stages], rotation=rotation, ha="right")
         ax.grid(axis="y", alpha=0.2)
-    axes[0].legend(**legend_kw)
     if ctx.title:
         fig.suptitle(ctx.title)
     fig.tight_layout()
+    shared_legend(fig, handles=model_handles(cat, truth=False, kind="patch"),
+                  fontsize=legend_kw.get("fontsize", 9))
     return save(fig, ctx.out, name, dpi=dpi, quiet=ctx.quiet)
 
 
@@ -314,12 +316,11 @@ def bsd_clean(ctx):
             ax.grid(alpha=0.2)
         for ax in axes[len(stages):]:
             ax.set_visible(False)
-        axes[0].legend(fontsize=9, framealpha=0.9)
-        if markers:
-            axes[0].text(0.02, 0.72, "$\\nabla$: no ionized pixels\n$\\Delta$: censored at box length",
-                         transform=axes[0].transAxes, va="top", fontsize=7.5, color="0.35")
         fig.suptitle(_title("Transverse mean-free-path ionized-bubble size distributions", ctx))
         fig.tight_layout()
+        key = style_key([("no ionized pixels", {"marker": "v", "ms": 6}),
+                         ("censored at box length", {"marker": "^", "ms": 6})]) if markers else []
+        shared_legend(fig, handles=model_handles(cat), fontsize=9, extra=key)
         written.append(save(fig, ctx.out, f"bsd_clean{suffix}", dpi=220, quiet=ctx.quiet))
     return written
 

@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from .registry import figure
+from .common import wrap_label
 from .common import field_name, pyplot, save
 
 
@@ -90,7 +91,9 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
         limited = np.isfinite(kperp_max) or np.isfinite(kpar_max).any()
         n_samples = len(_pooled(cat, target, m0, "cyl_have"))
         cmap = dead_band_cmap(vmax, band)
-        fig, axes = plt.subplots(len(cat.models), len(columns), figsize=(4.4 * len(columns), 3.5 * len(cat.models)),
+        # square (k_perp, k_par) panels: the figure follows the grid, not the other way round
+        fig, axes = plt.subplots(len(cat.models), len(columns),
+                                 figsize=(3.3 * len(columns) + 1.8, 3.25 * len(cat.models) + 1.1),
                                  squeeze=False, constrained_layout=True)
         pcm = None
         shares = {}
@@ -104,6 +107,7 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
                 pcm = ax.pcolormesh(kp, kpar, err, cmap=cmap, vmin=-vmax, vmax=vmax)
                 ax.set_xscale("log")
                 ax.set_yscale("log")
+                ax.set_box_aspect(1)
                 kp_c, kpar_c = np.sqrt(kp[1:] * kp[:-1]), np.sqrt(kpar[1:] * kpar[:-1])
                 resolved = (kp_c[None, :] <= kperp_max) & (kpar_c[:, None] <= kpar_max[col])
                 for lim, span, line, top in ((kperp_max, ax.axvspan, ax.axvline, kp[-1]),
@@ -124,7 +128,7 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
                 if row == len(cat.models) - 1:
                     ax.set_xlabel(r"$k_\perp$  [Mpc$^{-1}$]")
                 if col == 0:
-                    ax.set_ylabel(f"{cat.label(m)}\n" + r"$k_\parallel$  [Mpc$^{-1}$]", fontsize=10)
+                    ax.set_ylabel(f"{wrap_label(cat.label(m), 24)}\n" + r"$k_\parallel$  [Mpc$^{-1}$]", fontsize=10)
         bar = fig.colorbar(pcm, ax=axes, shrink=0.6, aspect=30, extend="both")
         bar.set_label(r"$P_{\rm pred}/P_{\rm true} - 1$  (white: within $\pm$" + f"{band:g})")
         ticks = sorted({-vmax, -band, 0.0, band, vmax} | set(np.round(np.arange(-vmax, vmax + 1e-9, 0.2), 2)))

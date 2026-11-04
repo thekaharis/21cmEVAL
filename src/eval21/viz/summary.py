@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from .registry import figure
-from .common import field_name, med_band, pyplot, save
+from .common import field_name, med_band, model_handles, pyplot, save, shared_legend, wrap_label
 
 SIGMA_TAU = 0.0073          # Planck 2018 1-sigma on tau_e
 
@@ -52,9 +52,9 @@ def plot_summary(cat, out: Path, title="", quiet=False):
     k = curves0.get("spectrum_k")
     written = []
 
-    def handles(where, **kw):
-        hs = [plt.Line2D([], [], color=col(m), ls=ls(m), lw=1.6, label=lab(m)) for m in models]
-        return where.legend(handles=hs, **kw)
+    def handles(where, truth=False, **_ignored):
+        """One model key per figure, above the panels (``where``: any axes of the figure)."""
+        return shared_legend(where.figure, handles=model_handles(cat, truth=truth), fontsize=8)
 
     def pooled(m, key, target="xhi"):
         return cat.pooled(m, key, target)
@@ -116,7 +116,7 @@ def plot_summary(cat, out: Path, title="", quiet=False):
         if better == "zero":
             ax.axvline(0, color="k", lw=0.6)
         ax.set_yticks(y)
-        ax.set_yticklabels([lab(m) for m in models] if ax in axs[:, 0] else [])
+        ax.set_yticklabels([wrap_label(lab(m), 22) for m in models] if ax in axs[:, 0] else [])
         hint = {"low": "lower is better", "high": "higher is better", "one": "1 is ideal", "zero": "0 is ideal"}[better]
         ax.set_title(f"{name}  ({hint})")
     for ax in axs.ravel()[len(panels):]:
@@ -201,9 +201,7 @@ def plot_summary(cat, out: Path, title="", quiet=False):
             axs[j].set_xlabel("mean-free-path size R [Mpc]")
             axs[j].set_title("active" if st == "active" else stage_label[st])
         axs[0].set_ylabel("ionized-area-weighted PDF (per bin)")
-        hs = [plt.Line2D([], [], color="k", lw=2.2, label="truth")] + \
-             [plt.Line2D([], [], color=col(m), ls=ls(m), label=lab(m)) for m in models]
-        axs[0].legend(handles=hs, loc="upper left")
+        handles(axs[0], truth=True)
         fig.suptitle("Bubble-size distributions (mean-free-path rays through transverse slices), mean over cones",
                      fontsize=10)
         written.append(save(fig, out, "summary_bubbles", quiet=quiet))

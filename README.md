@@ -389,6 +389,19 @@ The original quick-reference for the first four:
 `--style` is a JSON file `{"model": {"label": "...", "color": "...", "ls": "--"}}`; by default the
 first model is drawn dark grey dashed (the baseline) and the others in distinct colours.
 
+Layout conventions, so long model labels stay readable and figures stay comparable:
+
+- **One model key per figure**, above the panels and outside the axes (`viz.common.shared_legend`):
+  truth, then each model with its line sample, then figure-wide style keys (bands, markers,
+  reference lines). Panels carry no model legends.
+- **Per-panel statistics** (W1, |Δτ|, front widths, k(r < 0.9), …) sit in one line under the
+  panel's x label as `label ── value  - - value`, drawn in each model's colour and line style
+  (`viz.common.pane_values`).
+- **Image grids** (maps, slices, cyl maps) name models in wrapped panel titles or row labels.
+- **Cylindrical (k⊥, k∥) maps are square.**
+- Scatter figures name their points through the shared key; `--opt point_labels=1` also writes
+  the name next to each point.
+
 Stage chunks (`cyl_stages`) compare like with like across data sets that reionize at different
 redshifts; fixed-z chunks (`cyl_z_centers`) can be dominated by fully neutral or fully ionized
 volumes. When the truth was interpolated from a coarser native grid, declare it

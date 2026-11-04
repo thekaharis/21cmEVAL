@@ -62,7 +62,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .common import field_name, med_band, pyplot, save
+from .common import (field_name, med_band, model_handles, pane_values, pyplot, save, shared_legend, style_key,
+                     wrap_label)
 from .registry import SkipFigure, figure
 
 K_PERP = r"$k_\perp$  [Mpc$^{-1}$]"
@@ -235,7 +236,6 @@ def ps_overlay(ctx):
         ax.set_xlabel(K_PERP)
         ax.set_ylabel(_d2_label(target))
         ax.set_title("Transverse power (active slices, cone median)")
-        ax.legend(fontsize=8)
 
         ax = axes[1]
         ax.axhspan(0.95, 1.05, color="grey", alpha=0.18, lw=0)
@@ -249,30 +249,30 @@ def ps_overlay(ctx):
         ax.set_xlabel(K_PERP)
         ax.set_ylabel(RATIO)
         ax.set_title("Power ratio (grey band: ±5%)")
-        ax.legend(fontsize=8)
 
         ax = axes[2]
         ax.axhline(level, color="grey", lw=0.8, ls="--")
+        crossings = []
         for m in cat.models:
             if not spec[m].coherence:
                 continue
             med, lo, hi = (a[-1] for a in spec[m].r)
-            k90 = k_crossing(k, med, level)
-            label = cat.label(m) if not np.isfinite(k90) else f"{cat.label(m)} (r<{level:g} at {k90:.2f})"
-            ax.plot(*_finite(k, med), color=cat.color(m), ls=cat.ls(m), label=label)
+            crossings.append((cat.color(m), cat.ls(m), k_crossing(k, med, level)))
+            ax.plot(*_finite(k, med), color=cat.color(m), ls=cat.ls(m), label=cat.label(m))
             ax.fill_between(k, lo, hi, color=cat.color(m), alpha=0.18, lw=0)
+        pane_values(ax, crossings, label=f"k(r < {level:g}) [Mpc⁻¹]", fmt="{:.2f}")
         ax.set_xscale("log")
         ax.set_ylim(0, 1.05)
         ax.set_xlabel(K_PERP)
         ax.set_ylabel(r"$r(k_\perp)$")
         ax.set_title("Cross-correlation (phase fidelity)")
-        if ax.get_legend_handles_labels()[0]:
-            ax.legend(fontsize=8)
-        else:
+        if not ax.get_legend_handles_labels()[0]:
             ax.set_xlim(axes[1].get_xlim())
             ax.text(0.5, 0.5, "no coherence (generative runs)", ha="center", va="center",
                     transform=ax.transAxes, color="0.4")
         fig.tight_layout()
+        shared_legend(fig, handles=model_handles(cat),
+                      extra=style_key([("16–84 % over cones", {"kind": "band", "color": "0.6", "alpha": 0.35})]))
         written.append(save(fig, ctx.out, f"ps_overlay_{target}", dpi=DPI, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no 'spectrum' results")
@@ -315,9 +315,9 @@ def ps_stage_curves(ctx):
                                 transform=ax.transAxes, color="0.4")
                 ax.set_xlabel(K_PERP)
                 ax.set_ylabel(ylabel)
-                ax.set_title(f"{cat.label(m)} by reionization stage")
-                ax.legend(fontsize=7)
+                ax.set_title(wrap_label(f"{cat.label(m)} by reionization stage", 60))
         fig.tight_layout()
+        shared_legend(fig, axes=axes[0])                 # the stage colours, once
         written.append(save(fig, ctx.out, f"ps_stage_curves_{target}", dpi=DPI, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no 'spectrum' results")
@@ -489,7 +489,8 @@ def _plot_cyl(ctx, kind):
                 with np.errstate(all="ignore"):
                     return np.log2(np.where(a > 0, a, np.nan))
         n_col = len(cols)
-        fig, axes = plt.subplots(len(models), n_col, figsize=(4.6 * n_col, 3.8 * len(models)), squeeze=False)
+        fig, axes = plt.subplots(len(models), n_col, figsize=(4.0 * n_col + 0.6, 3.5 * len(models) + 0.4),
+                                 squeeze=False)
         for row, m in enumerate(models):
             for col, c in enumerate(cols):
                 ax = axes[row][col]
@@ -499,10 +500,13 @@ def _plot_cyl(ctx, kind):
                 pcm = ax.pcolormesh(data["kperp_edges"], c["kpar_edges"], np.ma.masked_invalid(raw), **style)
                 ax.set_xscale("log")
                 ax.set_yscale("log")
+                ax.set_box_aspect(1)                      # square (k_perp, k_par) panels
                 ax.set_xlabel(K_PERP)
-                ax.set_ylabel(K_PAR)
-                ax.set_title(f"{cat.label(m)} — {c['title']}")
-                fig.colorbar(pcm, ax=ax, pad=0.02, label=label)
+                # the model names the row (first column), the chunk the column (first row)
+                ax.set_ylabel(f"{wrap_label(cat.label(m), 24)}\n{K_PAR}" if col == 0 else K_PAR)
+                if row == 0:
+                    ax.set_title(c["title"])
+                fig.colorbar(pcm, ax=ax, pad=0.02, label=label, shrink=0.85)
         fig.tight_layout()
         name = "ps_cyl_ratio" if kind == "ratio" else "ps_cyl_r"
         written.append(save(fig, ctx.out, f"{name}_{target}", dpi=DPI, quiet=ctx.quiet))
@@ -636,20 +640,20 @@ def cyl_anisotropy_decomposition(ctx):
                                    vmin=-vmax, vmax=vmax, shading="nearest")
             ax_map.set_xscale("log")
             ax_map.set_yscale("log")
+            ax_map.set_box_aspect(1)                      # square (k_perp, k_par) map
             ax_map.set_xlabel(r"$k_\perp$")
             ax_map.set_ylabel(r"$k_\parallel$")
             dec = two_way_decomposition(adv)
             ax_map.set_title(
-                f"advantage over {cat.label(worst)}\n"
+                f"advantage over {wrap_label(cat.label(worst), 34)}\n"
                 f"$k_\\parallel$ {100 * dec['par_share']:.0f}%  "
                 f"$k_\\perp$ {100 * dec['perp_share']:.0f}%  "
                 f"resid {100 * dec['resid_share']:.0f}%", fontsize=9)
             fig.colorbar(im, ax=ax_map, label="error reduction")
-        handles, labels = axes[0, 0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False, fontsize=8.5)
         fig.suptitle(f"Cylindrical error split, {field_name(target)}  —  {c['title']}, {c['n']} cones",
                      fontsize=13)
-        fig.tight_layout(rect=(0, 0.075 if len(channels) > 1 else 0.12, 1, 0.96))
+        fig.tight_layout()
+        shared_legend(fig, axes=[axes[0, 0]], fontsize=8.5)
         written.append(save(fig, ctx.out, f"cyl_anisotropy_decomposition_{target}", dpi=DPI,
                             quiet=ctx.quiet))
     if not written:
@@ -710,8 +714,9 @@ def ps_coherence_highk(ctx):
             axes[1].plot(centers, ratio, ls=cat.ls(m), color=colour, lw=1.8, label=cat.label(m))
             if np.isfinite(coh_hk) and np.isfinite(hk):
                 axes[2].plot(coh_hk, hk, "o", ms=11, color=colour, mec=SURFACE, mew=2)
-                axes[2].annotate(cat.label(m), (coh_hk, hk), textcoords="offset points",
-                                 xytext=(0, 13 if i % 2 == 0 else -19), ha="center", fontsize=8.5, color=INK_2)
+                if ctx.opt("point_labels", 0, int):
+                    axes[2].annotate(wrap_label(cat.label(m), 24), (coh_hk, hk), textcoords="offset points",
+                                     xytext=(0, 13 if i % 2 == 0 else -19), ha="center", fontsize=8.5, color=INK_2)
             rows.append({"model": m, "coherence_mean_k_ge_kmin": coh_hk,
                          f"coherence_k_r{level:g}": coherence_scale(centers, coh, level),
                          "highk_active": hk, "n_samples": s.n})
@@ -727,8 +732,6 @@ def ps_coherence_highk(ctx):
         axes[1].set_yscale("log")
         for ax in axes[:2]:
             ax.set_xlabel("$k$  (cycles / pixel)", fontsize=10, color=INK_2)
-            if ax.get_legend_handles_labels()[0]:
-                ax.legend(frameon=False, fontsize=8.5, loc="best")
         axes[2].set_xlabel(f"mean coherence $r(k)$ for $k \\geq {k_min:g}$  (higher better)",
                            fontsize=10, color=INK_2)
         axes[2].set_ylabel("highk on active slices  (lower better)", fontsize=10, color=INK_2)
@@ -740,18 +743,14 @@ def ps_coherence_highk(ctx):
             for sp in ("left", "bottom"):
                 ax.spines[sp].set_color(GRID)
             ax.tick_params(colors=INK_2, labelsize=9)
+        fig.set_facecolor(SURFACE)
         fig.tight_layout()
-        ctx.out.mkdir(parents=True, exist_ok=True)
-        fig.savefig(ctx.out / f"ps_coherence_highk_{target}.pdf", facecolor=SURFACE)
-        fig.savefig(ctx.out / f"ps_coherence_highk_{target}.png", dpi=160, facecolor=SURFACE)
-        plt.close(fig)
+        shared_legend(fig, handles=model_handles(cat, truth=False, markers=["o"]), fontsize=8.5)
+        written.append(save(fig, ctx.out, f"ps_coherence_highk_{target}", dpi=160, quiet=ctx.quiet))
         with open(ctx.out / f"ps_coherence_highk_{target}.csv", "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows[0]))
             w.writeheader()
             w.writerows(rows)
-        if not ctx.quiet:
-            print("wrote", ctx.out / f"ps_coherence_highk_{target}.png")
-        written.append(ctx.out / f"ps_coherence_highk_{target}.png")
     if not written:
         raise SkipFigure("no 'spectrum' results")
     return written
@@ -826,7 +825,8 @@ def ps_plane3d(ctx):
             labels.append((cat.label(m), r, err, hollow))
         if labels:
             ax.margins(0.12)
-            place_labels(ax, labels)
+            if ctx.opt("point_labels", 0, int):
+                place_labels(ax, [(wrap_label(t, 24), *rest) for t, *rest in labels])
         else:
             ax.text(0.5, 0.5, "no coherence (generative runs)", ha="center", va="center",
                     transform=ax.transAxes, color=INK_MUTED)
@@ -839,19 +839,14 @@ def ps_plane3d(ctx):
         for sp in ax.spines.values():
             sp.set_color(GRID)
         ax.tick_params(colors=INK_2)
-        if labels:
-            ax.legend(frameon=False, loc=str(ctx.options.get("legend_loc", "best")), fontsize=9)
         if note:
             fig.text(0.01, 0.01, note, fontsize=7.5, color=INK_MUTED, ha="left", va="bottom", wrap=True)
         fig.tight_layout(rect=(0, 0.06 if note else 0, 1, 1))
-        ctx.out.mkdir(parents=True, exist_ok=True)
-        fig.savefig(ctx.out / f"ps_plane3d_{target}.pdf", facecolor=SURFACE)
-        fig.savefig(ctx.out / f"ps_plane3d_{target}.png", dpi=150, facecolor=SURFACE)
-        plt.close(fig)
+        if labels:
+            shared_legend(fig, fontsize=9)
+        fig.set_facecolor(SURFACE)
+        written.append(save(fig, ctx.out, f"ps_plane3d_{target}", dpi=150, quiet=ctx.quiet))
         (ctx.out / f"ps_plane3d_{target}.csv").write_text("\n".join(lines) + "\n")
-        if not ctx.quiet:
-            print("wrote", ctx.out / f"ps_plane3d_{target}.png")
-        written.append(ctx.out / f"ps_plane3d_{target}.png")
     if not written:
         raise SkipFigure("; ".join(reasons) or "no 'spectrum' results")
     return written

@@ -14,7 +14,7 @@ parity_comparison      fno-21cm ``legacy/xhi2d/compare_xhi2d_to_3d.py``  one hex
                                                                         magma, white dashed identity)
 boundary_band_overlay  fno-21cm ``viz/boundary_band_diagnostic.py``     three panels vs signed distance to the true front         curves
                        ``plot_overlay`` (also drawn by                  (2-D transverse, - ionized / + neutral): RMSE per voxel,
-                       ``viz/edge_metrics_xhi2d.py`` as                 mean x_HI with 10-90 % front widths in the legend and
+                       ``viz/edge_metrics_xhi2d.py`` as                 mean x_HI with 10-90 % front widths under the panel and
                        ``edge_band_overlay``)                           title, RMS in-plane gradient error
 =====================  ===============================================  ========================================================  =======
 
@@ -40,7 +40,7 @@ import re
 import numpy as np
 
 from ..physics import front_width
-from .common import pyplot, save
+from .common import model_handles, pane_values, pyplot, save, shared_legend, style_key
 from .registry import SkipFigure, figure
 
 TARGET = "xhi"
@@ -101,14 +101,18 @@ def parity_overlay(ctx):
                 continue
             c, name = cat.color(m), cat.label(m)
             x = st["truth_mean"]
-            ax.fill_between(x, st["pred_p16"], st["pred_p84"], color=c, alpha=0.22, linewidth=0,
-                            label=f"{name} 16-84%")
-            ax.plot(x, st["pred_p50"], color=c, lw=1.8, label=f"{name} median")
-            ax.plot(x, st["pred_mean"], color=c, lw=1.0, ls=":", label=f"{name} mean")
+            ax.fill_between(x, st["pred_p16"], st["pred_p84"], color=c, alpha=0.22, linewidth=0)
+            ax.plot(x, st["pred_p50"], color=c, lw=1.8)
+            ax.plot(x, st["pred_mean"], color=c, lw=1.0, ls=":")
         ax.set_ylabel("predicted x_HI")
         ax.set_xlim(0, 1)
         ax.set_ylim(-0.02, 1.02)
-        ax.legend(fontsize=8, loc="upper left")
+        # colour = model (solid line samples); line style / band = statistic, once for all models
+        shown = [m for m, st in stats.items() if st["count"].sum()]
+        shared_legend(fig, handles=model_handles(cat, models=shown, truth=False, kind="patch"),
+                      extra=style_key([("median", "-"), ("mean", ":"),
+                                       ("16–84 %", {"kind": "band", "color": "0.5", "alpha": 0.3}),
+                                       ("identity", {"ls": "--", "color": "0.4", "lw": 1.0})]), fontsize=8.5)
         title = "Binned parity plot: E[predicted x_HI | true x_HI]"
         if len(groups) > 1:
             title += f" ({group})"
@@ -247,23 +251,23 @@ def boundary_band_overlay(ctx):
     ax.set_xlabel("signed distance to true front  [Mpc]\n(- ionized   +  neutral)")
     ax.set_ylabel("RMSE per voxel")
     ax.set_title("Error localised at the front")
-    ax.legend(fontsize=8)
 
     # (2) mean x_HI vs signed distance: front sharpness
     ax = axes[1]
     any_truth = next(iter(profiles.values()))
     ax.plot(*_finite(any_truth["d_mpc"], any_truth["front_mean_truth"]), "k-", lw=2.2, label="truth")
+    widths = []
     for m, p in profiles.items():
-        w = front_width(p["d_mpc"], p["front_mean_pred"])
+        widths.append((cat.color(m), cat.ls(m), front_width(p["d_mpc"], p["front_mean_pred"])))
         ax.plot(*_finite(p["d_mpc"], p["front_mean_pred"]), color=cat.color(m), ls=cat.ls(m),
-                label=f"{cat.label(m)} (10-90 = {w:.1f} Mpc)")
+                label=cat.label(m))
     wt = front_width(any_truth["d_mpc"], any_truth["front_mean_truth"])
     ax.axhline(0.1, color="grey", lw=0.6, ls="--")
     ax.axhline(0.9, color="grey", lw=0.6, ls="--")
     ax.set_xlabel("signed distance to true front  [Mpc]")
     ax.set_ylabel(r"$\langle x_{\rm HI}\rangle$")
     ax.set_title(f"Front sharpness (truth 10-90 = {wt:.1f} Mpc)")
-    ax.legend(fontsize=8)
+    pane_values(ax, widths, label="10–90 width [Mpc]", fmt="{:.1f}")
 
     # (3) gradient (H1 seminorm) RMS vs signed distance
     ax = axes[2]
@@ -273,9 +277,9 @@ def boundary_band_overlay(ctx):
     ax.set_xlabel("signed distance to true front  [Mpc]")
     ax.set_ylabel(r"RMS $|\nabla(\hat{x}-x)|$")
     ax.set_title("Gradient error (where the H1 win lives)")
-    ax.legend(fontsize=8)
 
     if ctx.title:
         fig.suptitle(ctx.title)
     fig.tight_layout()
+    shared_legend(fig, handles=model_handles(cat, models=list(profiles)))
     return [save(fig, ctx.out, "boundary_band_overlay", dpi=130, quiet=ctx.quiet)]

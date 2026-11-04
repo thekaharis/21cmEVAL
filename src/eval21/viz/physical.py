@@ -56,7 +56,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .common import field_name, med_band, pyplot, save
+from .common import (field_name, med_band, model_handles, pane_values, pyplot, save, shared_legend,
+                     style_key)
 from .registry import SkipFigure, figure
 
 PLANCK_TAU_SIGMA = 0.0073
@@ -264,11 +265,9 @@ def physical_history(ctx):
         ax.set_xlabel("z")
         ax.set_ylabel(r"$\bar{x}_{\rm HI}^{\rm pred} - \bar{x}_{\rm HI}^{\rm true}$")
         ax.set_title("Global history error (cone median, 16-84%)")
-        if drawn:
-            ax.legend(fontsize=8)
 
         ax = axes[1]
-        ax.axvspan(-1, 1, color="grey", alpha=0.18, lw=0, label=r"$\pm1\sigma_{\rm Planck}$")
+        ax.axvspan(-1, 1, color="grey", alpha=0.18, lw=0)
         pulls = [(_pool(cat, m, "history_tau_pred", "xhi") - _pool(cat, m, "history_tau_truth", "xhi"))
                  / PLANCK_TAU_SIGMA for m in models]
         finite = np.concatenate([p[np.isfinite(p)] for p in pulls]) if pulls else np.array([])
@@ -276,27 +275,31 @@ def physical_history(ctx):
         bins = np.linspace(-limit, limit, 41)
         for m, pull in zip(models, pulls):
             ax.hist(pull[np.isfinite(pull)], bins=bins, histtype="step", lw=1.6, color=cat.color(m),
-                    ls=cat.ls(m), label=f"{cat.label(m)} (med |Δτ| = {np.nanmedian(np.abs(pull)):.2f}σ)")
+                    ls=cat.ls(m))
+        pane_values(ax, [(cat.color(m), cat.ls(m), np.nanmedian(np.abs(pull)) if pull.size else None)
+                         for m, pull in zip(models, pulls)], label="median |Δτ|/σ", fmt="{:.2f}")
         ax.set_xlabel(r"$\Delta\tau_e / \sigma_{\rm Planck}$  ($\sigma = 0.0073$)")
         ax.set_ylabel("cones")
         ax.set_title("Thomson optical depth error")
-        ax.legend(fontsize=8)
 
         for ax, key, label in ((axes[2], "z_xhi50", r"$z(\bar{x}_{\rm HI} = 0.5)$"),
                                (axes[3], "delta_z", r"$\Delta z = z_{0.75} - z_{0.25}$")):
-            preds = []
+            preds, errors = [], []
             for m in models:
                 t, p = _pool(cat, m, f"history_{key}_truth", "xhi"), _pool(cat, m, f"history_{key}_pred", "xhi")
                 preds.append(p)
-                error = np.nanmedian(np.abs(p - t)) if t.size else np.nan
-                ax.scatter(t, p, s=10, alpha=0.7, color=cat.color(m), label=f"{cat.label(m)} (med |err| = {error:.3f})")
+                errors.append((cat.color(m), cat.ls(m), np.nanmedian(np.abs(p - t)) if t.size else None))
+                ax.scatter(t, p, s=10, alpha=0.7, color=cat.color(m))
             _one_to_one(ax, _pool(cat, models[0], f"history_{key}_truth", "xhi"), *preds)
+            pane_values(ax, errors, label="median |error|", fmt="{:.3f}")
             ax.set_xlabel(f"truth {label}")
             ax.set_ylabel(f"prediction {label}")
-            ax.legend(fontsize=8)
         axes[2].set_title(rf"Midpoint ($\sigma_{{z_{{re}}}}^{{\rm Planck}}$ = {PLANCK_ZRE_SIGMA})")
         axes[3].set_title("Duration")
         fig.tight_layout()
+        shared_legend(fig, handles=model_handles(cat, truth=False),
+                      extra=style_key([(r"$\pm1\sigma_{\rm Planck}$", {"kind": "band", "color": "grey", "alpha": 0.18}),
+                                       ("16–84 % over cones", {"kind": "band", "color": "0.6", "alpha": 0.35})]))
     return [save(fig, ctx.out, "physical_history", dpi=130, quiet=ctx.quiet)]
 
 
@@ -354,16 +357,17 @@ def physical_pdfs(ctx):
                 truth = _pooled_hist(cat, cat.models[0], f"{name}_hist_truth", token, s)
                 if truth is not None:
                     ax.step(centers, truth / widths, where="mid", color=TRUTH, lw=2.0, label="truth")
+                w1s = []
                 for m in cat.models:
                     pred = _pooled_hist(cat, m, f"{name}_hist_pred", token, s)
                     if pred is None:
                         continue
-                    w1 = _stage_value(cat, m, s, w1_key)
+                    w1s.append((cat.color(m), cat.ls(m), _stage_value(cat, m, s, w1_key)))
                     ax.step(centers, pred / widths, where="mid", color=cat.color(m), ls=cat.ls(m),
-                            label=f"{cat.label(m)} (W1={w1:.3g})")
+                            label=cat.label(m))
                 if truth is not None:
                     ax.set_yscale("log")
-                    ax.legend(fontsize=7)
+                    pane_values(ax, w1s, label="W1")
                 else:
                     ax.text(0.5, 0.5, "stage not reached", ha="center", va="center", transform=ax.transAxes,
                             color="0.4")
@@ -371,6 +375,7 @@ def physical_pdfs(ctx):
                 ax.set_title(stage, fontsize=9)
             axes[row][0].set_ylabel("PDF (pooled over cones)")
         fig.tight_layout()
+        shared_legend(fig, handles=model_handles(cat))
     return [save(fig, ctx.out, "physical_pdfs", dpi=130, quiet=ctx.quiet)]
 
 
@@ -411,7 +416,6 @@ def physical_21cm(ctx):
         ax.set_xlabel(r"$k_\perp$ [Mpc$^{-1}$]")
         ax.set_ylabel(r"$\Delta^2_{21,\perp}(k)$ [mK$^2$]")
         ax.set_title("Transverse 21-cm power (active slices, cone median)")
-        ax.legend(fontsize=8)
 
         ax = axes[0][1]
         styles = ["-", "--", ":", "-."]
@@ -420,17 +424,18 @@ def physical_21cm(ctx):
         for j, kt in enumerate(k_targets):
             ls = styles[j % len(styles)]
             if t.ndim == 3 and j < t.shape[2]:
-                ax.plot(xbar, med_band(t)[0][:, j], color="k", ls=ls, lw=2.0, label=f"truth k={kt:.2f}")
+                ax.plot(xbar, med_band(t)[0][:, j], color="k", ls=ls, lw=2.0)
             for m in models:
                 p = preds[m]
                 if p.ndim == 3 and j < p.shape[2]:
-                    ax.plot(xbar, med_band(p)[0][:, j], color=cat.color(m), ls=ls,
-                            label=f"{cat.label(m)} k={kt:.2f}" if j == 0 else None)
+                    ax.plot(xbar, med_band(p)[0][:, j], color=cat.color(m), ls=ls)
+        k_key = style_key([(rf"$k$ = {kt:.2f} Mpc$^{{-1}}$", styles[j % len(styles)]) for j, kt in enumerate(k_targets)])
+        ax.legend([h for h, _ in k_key], [lab for _, lab in k_key], fontsize=7, frameon=False,
+                  title="colour = model", title_fontsize=7)
         ax.set_yscale("log")
         ax.set_xlabel(r"$\bar{x}_{\rm HI}$ (truth)")
         ax.set_ylabel(r"$\Delta^2_{21,\perp}$ [mK$^2$]")
         ax.set_title("21-cm power evolution at fixed k")
-        ax.legend(fontsize=7)
 
         for ax, key, title in ((axes[1][0], "xbar_var", r"Var($\delta T_b$) [mK$^2$]"),
                                (axes[1][1], "xbar_skew", r"Skewness($\delta T_b$)")):
@@ -443,7 +448,6 @@ def physical_21cm(ctx):
                     _band(ax, xbar, *med_band(p), cat.color(m), cat.label(m), ls=cat.ls(m))
             ax.set_xlabel(r"$\bar{x}_{\rm HI}$ (truth)")
             ax.set_title(title)
-            ax.legend(fontsize=8)
         axes[1][1].axhline(0.0, color="k", lw=0.6, ls=":")
 
         for ax, key, title in ((axes[0][2], "sig_dtb", r"$\delta T_b$"), (axes[1][2], "sig_xhi", r"$x_{\rm HI}$")):
@@ -457,8 +461,11 @@ def physical_21cm(ctx):
             ax.set_xlabel(r"$k_\perp$ [Mpc$^{-1}$]")
             ax.set_ylabel(r"$(P_{\rm pred}-P_{\rm true})\,/\,\sigma_{\rm SV,slice}$")
             ax.set_title(f"{title} power bias / single-slice sample variance (active)")
-            ax.legend(fontsize=8)
         fig.tight_layout()
+        shared_legend(                                 # the k key stays in its own panel
+                      fig, axes=[a for a in np.ravel(axes) if a is not axes[0][1]], handles=model_handles(cat),
+                      extra=style_key([("16–84 % over cones", {"kind": "band", "color": "0.6", "alpha": 0.35}),
+                                       (r"$\pm1\sigma$ sample variance", {"kind": "band", "color": "grey", "alpha": 0.18})]))
     return [save(fig, ctx.out, "physical_21cm", dpi=130, quiet=ctx.quiet)]
 
 
@@ -525,7 +532,6 @@ def physical_eft(ctx):
                         ax.set_ylim(bottom=1e-3 * float(floor.min()))
                 ax.set_xlabel(r"$k_\perp$ [Mpc$^{-1}$]")
                 ax.set_title(f"{title} (active slices)")
-                ax.legend(fontsize=8)
 
             fits = {}
             for i, m in enumerate(cat.models):
@@ -546,24 +552,24 @@ def physical_eft(ctx):
                         t = fits[(m, s)][f"{key}_truth"][:, term]
                         p = fits[(m, s)][f"{key}_pred"][:, term]
                         values.extend([t, p])
-                        ax.scatter(t, p, s=12, alpha=0.7, color=stage_colors[s], marker=markers[i % len(markers)],
-                                   label=stage if i == 0 else None)
+                        ax.scatter(t, p, s=12, alpha=0.7, color=stage_colors[s], marker=markers[i % len(markers)])
                 _one_to_one(ax, *values)
                 if key == "stoch":
                     ax.set_xscale("log")
                     ax.set_yscale("log")
                 ax.set_xlabel(f"truth {label}")
                 ax.set_ylabel(f"prediction {label}")
-                ax.set_title(f"{label}, k ≤ {k_max:g} Mpc⁻¹ (marker = model)")
-                if values:
-                    ax.legend(fontsize=7)
-            if len(cat.models) > 1:
-                note = ", ".join(f"{markers[i % len(markers)]} = {cat.label(m)}" for i, m in enumerate(cat.models))
-                fig.text(0.5, 0.005, f"bottom row markers: {note}", ha="center", va="bottom", fontsize=8, color="0.3")
+                ax.set_title(f"{label}, k ≤ {k_max:g} Mpc⁻¹")
             if target != "xhi":
                 fig.suptitle(f"EFT diagnostics of {field_name(target)} (u = {field_name(target)} − ⟨{field_name(target)}⟩)",
                              fontsize=11)
-            fig.tight_layout(rect=(0, 0.02 if len(cat.models) > 1 else 0, 1, 1))
+            fig.tight_layout()
+            # one legend: truth + models (line style for the top row, marker for the bottom row),
+            # then the stage colours of the bottom-row points
+            stage_key = style_key([(stage, {"marker": "o", "color": stage_colors[s], "ms": 6})
+                                   for s, stage in enumerate(labels[:-1])])
+            shared_legend(fig, handles=model_handles(cat, markers=markers if len(cat.models) > 1 else None),
+                          extra=stage_key)
         written.append(save(fig, ctx.out, f"physical_eft_{target}", dpi=130, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no eft metric (needs density)")
@@ -646,15 +652,12 @@ def physical_3d(ctx):
                 else:
                     axes[0].set(xlabel="redshift z" if z is not None else "LOS cell",
                                 ylabel=f"global {target}{' [mK]' if target == 'tb' else ''}")
-                axes[0].legend()
                 axes[1].set(xlabel="k [grid units]", ylabel=f"P_{'xHI' if target == 'xhi' else target}(k)")
-                axes[1].legend()
                 axes[2].set(xlabel="k [grid units]", ylabel="Fourier cross-correlation", ylim=(-1.05, 1.05))
-                if len(have) > 1:
-                    axes[2].legend()
                 fig.suptitle(f"Physical diagnostics - {ctx.title + ' ' if ctx.title else ''}{sid}"
                              + ("" if target == "xhi" else f" ({field_name(target)})"))
                 fig.tight_layout()
+                shared_legend(fig, handles=model_handles(cat, models=have))
             written.append(save(fig, ctx.out / "physical_3d", f"physical_3d_{target}_{sid}", dpi=150, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no stored sample has the catalog's targets")
@@ -764,7 +767,7 @@ def rmse_r2(ctx):
                 ax.set_title(title + ("" if target == "xhi" else f" ({field_name(target)})"))
                 ax.grid(axis="y", alpha=0.25)
             axes[1].axhline(0, color="black", linewidth=0.8)
-            axes[0].legend()
+            shared_legend(fig, handles=model_handles(cat, truth=False, kind="patch"))
             fig.text(0.995, 0.005, note, ha="right", va="bottom", fontsize=7, color="0.4")
         written.append(save(fig, ctx.out, f"rmse_r2_comparison_{target}", dpi=170, quiet=ctx.quiet))
 
@@ -792,8 +795,7 @@ def rmse_r2(ctx):
                 ax.grid(axis="y", alpha=0.25)
                 if metric == "r2":
                     ax.axhline(0, color="black", linewidth=0.8)
-            handles = [plt.Rectangle((0, 0), 1, 1, color=cat.color(m)) for m in models]
-            axes[0].legend(handles, [cat.label(m) for m in models])
+            shared_legend(fig, handles=model_handles(cat, truth=False, kind="patch"))
             fig.text(0.995, 0.005, note, ha="right", va="bottom", fontsize=7, color="0.4")
         written.append(save(fig, ctx.out, f"rmse_r2_distributions_{target}", dpi=170, quiet=ctx.quiet))
     if not written:
@@ -834,16 +836,17 @@ def _style(ax, minor=True):
 
 
 def _legend(ax, xs, ys):
-    leg = ax.legend(loc=_best_legend_loc(xs, ys), frameon=True, fontsize=9.5, facecolor=SURFACE,
-                    edgecolor=GRID, borderpad=0.8)
-    for t in leg.get_texts():
-        t.set_color(INK_2)
+    """Model key above the panels (one shared legend; names do not crowd the scatter)."""
+    shared_legend(ax.figure, fontsize=9.5)
 
 
-def _scatter(ax, cat, pts, xkey, ykey):
+def _scatter(ax, cat, pts, xkey, ykey, annotate=False):
+    """Model points; ``annotate`` (``--opt point_labels=1``) also writes each name next to its point."""
     for p in sorted(pts, key=lambda p: p[xkey]):
         ax.plot(p[xkey], p[ykey], "o", ms=10, color=cat.color(p["model"]), mec=SURFACE, mew=2, zorder=3,
                 linestyle="none", label=cat.label(p["model"]))
+    if not annotate:
+        return
     for i, p in enumerate(sorted(pts, key=lambda p: p[xkey])):
         dy = 13 if i % 2 == 0 else -20
         ax.annotate(cat.label(p["model"]), (p[xkey], p[ykey]), textcoords="offset points", xytext=(0, dy),
@@ -933,7 +936,7 @@ def params_vs_accuracy(ctx):
                 front = _pareto(use, "params", metric, lower_better)
                 ax.plot([p["params"] for p in front], [p[metric] for p in front], "-", color=INK_MUTED, lw=1.1,
                         alpha=0.7, zorder=1, label="Pareto front")
-                _scatter(ax, cat, use, "params", metric)
+                _scatter(ax, cat, use, "params", metric, annotate=bool(ctx.opt("point_labels", 0, int)))
                 ax.set_xscale("log")
                 ax.set_xlabel("Trainable parameters  (complex weights counted as two)", fontsize=10, color=INK_2)
                 ax.set_ylabel(ylabel, fontsize=10, color=INK_2)
@@ -985,7 +988,7 @@ def inference_speed(ctx):
                 front = _pareto(acc, "cubes_per_s", "rmse", True, x_low_better=False)
                 ax.plot([p["cubes_per_s"] for p in front], [p["rmse"] for p in front], "-", color=INK_MUTED, lw=1.1,
                         alpha=0.7, zorder=1, label="Pareto front")
-                _scatter(ax, cat, acc, "cubes_per_s", "rmse")
+                _scatter(ax, cat, acc, "cubes_per_s", "rmse", annotate=bool(ctx.opt("point_labels", 0, int)))
                 ax.set_xlabel("Inference throughput  (cubes / s, higher is better)", fontsize=10, color=INK_2)
                 ax.set_ylabel(f"Test RMSE{unit}  ({_n_samples(cat, target)} cones, all voxels)", fontsize=10,
                               color=INK_2)
@@ -1010,7 +1013,7 @@ def inference_speed(ctx):
         if size:
             with _quiet():
                 fig, ax = _surface_fig(plt)
-                _scatter(ax, cat, size, "params", "slices_per_s")
+                _scatter(ax, cat, size, "params", "slices_per_s", annotate=bool(ctx.opt("point_labels", 0, int)))
                 ax.set_xscale("log")
                 ax.set_xlabel("Trainable parameters  (complex weights counted as two)", fontsize=10, color=INK_2)
                 ax.set_ylabel("Inference throughput  (LOS slices / s)", fontsize=10, color=INK_2)

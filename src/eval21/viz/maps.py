@@ -70,7 +70,7 @@ import re
 
 import numpy as np
 
-from .common import field_name, pyplot, save
+from .common import field_name, pyplot, save, wrap_label
 from .registry import SkipFigure, figure
 from .slices import cone_name
 
@@ -205,7 +205,7 @@ def _cones(ctx, models, ids):
 
 def _mlabel(cat, m, models, base):
     """Panel title: the original's text, with the model label when several models are shown."""
-    return base if len(models) == 1 else f"{cat.label(m)}\n{base}"
+    return base if len(models) == 1 else f"{wrap_label(cat.label(m), 28)}\n{base}"
 
 
 def _limits(field, ref, pct=(0.5, 99.5)):
@@ -303,7 +303,7 @@ def _slice_rows_figure(plt, cat, models, field, rows, suptitle, density_title, e
             ax = fig.add_subplot(gs[row, col]); col += 1
             mse = float(np.mean(errs[m] ** 2))
             im3 = ax.imshow(errs[m], cmap="RdBu_r", origin="lower", vmin=-vmax_err, vmax=vmax_err)
-            ax.set_title((err_title if len(models) == 1 else f"{cat.label(m)}: {err_title}")
+            ax.set_title((err_title if len(models) == 1 else f"{wrap_label(cat.label(m), 28)}: {err_title}")
                          + (f"\nMSE = {mse:.4f}" if field == "xhi" else f"\nMSE = {mse:.4g}"))
             _strip_axes(ax)
         cax = fig.add_subplot(gs[row, ncol])
@@ -383,7 +383,7 @@ def lightcone_3d(ctx):
             for m in models:
                 panels.append((_mlabel(cat, m, models, f"Predicted {_plain(field)}").replace("\n", ": "),
                                p_strips[m], dict(cmap=cmap, vmin=v0, vmax=v1)))
-                panels.append(((f"{cat.label(m)}: " if len(models) > 1 else "") + "Pred - True",
+                panels.append(((f"{wrap_label(cat.label(m), 28)}: " if len(models) > 1 else "") + "Pred - True",
                                e_strips[m], dict(cmap="RdBu_r", vmin=-vmax_err, vmax=vmax_err)))
             fig, axes = plt.subplots(len(panels), 1, figsize=(14, 2 * len(panels)), sharex=True, squeeze=False)
             for ax, (title, img, kw) in zip(axes[:, 0], panels):
@@ -449,7 +449,7 @@ def scatter_3d(ctx):
             fig, axes = plt.subplots(1, len(models), figsize=(5 * len(models), 5), squeeze=False)
             for ax, m in zip(axes[0], models):
                 _hexbin_panel(ax, t_flat, c.preds[m][field][..., z0:].ravel(), field,
-                              title if len(models) == 1 else cat.label(m))
+                              title if len(models) == 1 else wrap_label(cat.label(m), 28))
             if len(models) > 1:
                 fig.suptitle(title)
             fig.tight_layout()
@@ -517,7 +517,7 @@ def lightcone_grid_3d(ctx):
             panels += [(p, dict(cmap=cmap, vmin=v0, vmax=v1), _mlabel(cat, m, models, f"Predicted {_plain(field)}"))
                        for m, p in zip(models, p_strips)]
             panels += [(e, dict(cmap="RdBu_r", vmin=-vmax_err, vmax=vmax_err),
-                        (f"{cat.label(m)}: " if len(models) > 1 else "") + "Pred - True")
+                        (f"{wrap_label(cat.label(m), 28)}: " if len(models) > 1 else "") + "Pred - True")
                        for m, e in zip(models, e_strips)]
             for col, (img, kw, title) in enumerate(panels):
                 ax = axes[row, col]
@@ -559,9 +559,9 @@ def active_band(truth, pad=12):
 
 def _row_labels(cat, models, show_error=True):
     rows = [("truth", None, False)]
-    rows += [("prediction" if len(models) == 1 else cat.label(m), m, False) for m in models]
+    rows += [("prediction" if len(models) == 1 else wrap_label(cat.label(m), 28), m, False) for m in models]
     if show_error:
-        rows += [("pred - truth" if len(models) == 1 else f"{cat.label(m)}\n- truth", m, True) for m in models]
+        rows += [("pred - truth" if len(models) == 1 else f"{wrap_label(cat.label(m), 28)}\n- truth", m, True) for m in models]
     return rows
 
 
@@ -1010,7 +1010,7 @@ def lightcone_animation(ctx):
         n = len(c.z)
         frames = list(range(0, n, max(1, int(np.ceil(n / max_frames)))))
         box = c.box or c.truth[fields[0]].shape[0]
-        columns = [("truth", None)] + [("prediction" if len(models) == 1 else cat.label(m), m) for m in models]
+        columns = [("truth", None)] + [("prediction" if len(models) == 1 else wrap_label(cat.label(m), 28), m) for m in models]
         fig, axes = plt.subplots(len(fields), len(columns), figsize=(3.7 * len(columns), 3.75 * len(fields)),
                                  squeeze=False)
         images = {}
@@ -1116,7 +1116,7 @@ def slice_scatter(ctx):
         for ax, m in zip(axes[0], models):
             p_flat = np.concatenate([cones[ci].preds[m][field][:, :, k].ravel() for ci, k in picks])
             _hexbin_panel(ax, t_flat, p_flat, field,
-                          f"Scatter — {split}" if len(models) == 1 else cat.label(m))
+                          f"Scatter — {split}" if len(models) == 1 else wrap_label(cat.label(m), 28))
         if len(models) > 1:
             fig.suptitle(f"Scatter — {split}")
         fig.tight_layout()
@@ -1207,9 +1207,9 @@ def representative_z_slices(ctx):
         lab = field_name(field)
         axes[0, 0].set_title(f"Truth {lab}")
         for j, m in enumerate(models):
-            axes[0, 1 + j].set_title(f"Prediction {lab}" if len(models) == 1 else f"{cat.label(m)}\nprediction {lab}")
+            axes[0, 1 + j].set_title(f"Prediction {lab}" if len(models) == 1 else f"{wrap_label(cat.label(m), 28)}\nprediction {lab}")
             axes[0, 1 + len(models) + j].set_title("Prediction - truth" if len(models) == 1
-                                                   else f"{cat.label(m)}\nprediction - truth")
+                                                   else f"{wrap_label(cat.label(m), 28)}\nprediction - truth")
         fig.colorbar(field_image, ax=axes[:, :1 + len(models)], shrink=0.8,
                      label=lab + ("" if field == "xhi" else f" [{_units(field)}]"))
         fig.colorbar(error_image, ax=axes[:, 1 + len(models):], shrink=0.8, label="signed error")
@@ -1235,7 +1235,7 @@ def representative_z_compare(ctx):
         lab = field_name(field)
         v0, v1 = _limits(field, truth)
         cmap = "viridis" if field == "xhi" else "inferno"
-        columns = ["Truth"] + [cat.label(m) for m in models]
+        columns = ["Truth"] + [wrap_label(cat.label(m), 28) for m in models]
         fig, axes = plt.subplots(len(info), len(columns), figsize=(2.8 * len(columns), 3.25 * len(info)),
                                  constrained_layout=True, squeeze=False)
         rendered = None
@@ -1262,7 +1262,7 @@ def representative_z_compare(ctx):
                 ax = axes[row, col]
                 rendered = ax.imshow(errors[m][row], origin="lower", cmap="RdBu_r", vmin=-limit, vmax=limit)
                 if row == 0:
-                    ax.set_title(cat.label(m))
+                    ax.set_title(wrap_label(cat.label(m), 28))
                 _strip_axes(ax)
             axes[row, 0].set_ylabel(_zt(inf))
         fig.colorbar(rendered, ax=axes, shrink=0.75,
