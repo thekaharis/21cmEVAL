@@ -33,6 +33,8 @@ def _selected(selection: np.ndarray, limit: int) -> np.ndarray:
 
 @register("bubble")
 class BubbleSizeMetrics(Metric):
+    pointwise = False
+    targets = ('xhi',)
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.per_sample: list[dict] = []
@@ -40,8 +42,8 @@ class BubbleSizeMetrics(Metric):
         self.centers = None
         self._geometry = None
 
-    def _stage_rows(self, truth):
-        xbar = truth.mean(axis=(0, 1))
+    def _stage_rows(self, truth, xbar=None):
+        xbar = truth.mean(axis=(0, 1)) if xbar is None else xbar
         stage = np.digitize(xbar, self.settings.stage_edges) - 1
         rows = [
             _selected(stage == index, self.settings.slices_per_stage)

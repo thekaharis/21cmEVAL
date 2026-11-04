@@ -31,6 +31,9 @@ from .base import Metric
 
 @register("front")
 class FrontMetrics(Metric):
+    pointwise = "partial"
+    pointwise_keys = ('rmse', 'errfrac', 'h1_', 'pred_where_truth', 'saturated')   # dropped in generative mode
+    targets = ('xhi',)
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         n = int(round(2 * settings.front_d_max_mpc / settings.front_bin_mpc))

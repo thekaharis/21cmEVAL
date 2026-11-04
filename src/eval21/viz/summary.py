@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .registry import figure
 from .common import field_name, med_band, pyplot, save
 
 SIGMA_TAU = 0.0073          # Planck 2018 1-sigma on tau_e
@@ -362,3 +363,8 @@ def plot_summary(cat, out: Path, title="", quiet=False):
         {"models": models, "labels": {m: lab(m) for m in models}, "skipped_incomplete": cat.skipped,
          "groups": dict(zip(groups, sizes)), "scores": tab}, indent=1, ensure_ascii=False))
     return written
+
+
+@figure("summary", group="summary", help="scorecard, per-sample RMSE, spectra, bubbles, history, fronts, EFT/morphology")
+def _fig_summary(ctx):
+    return plot_summary(ctx.catalog, ctx.out, title=ctx.title, quiet=ctx.quiet)

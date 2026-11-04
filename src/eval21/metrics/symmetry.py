@@ -16,6 +16,7 @@ from .base import Metric, nanmedian
 
 @register("symmetry")
 class SymmetryMetrics(Metric):
+    pointwise = True
     needs = ()
     requires_rerun = True
 

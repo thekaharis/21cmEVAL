@@ -1,17 +1,21 @@
 """Command line interface.
 
+    eval21 build sims/ --out cubes.h5 --format 21cmfast --z-grid uniform:5,25,512
     eval21 run --data cubes/ --model toy=synthetic:1.5 --out results/
+    eval21 run --data cubes.h5 --model gen=python:gen.py --draws 16 --mode generative
     eval21 run --config eval.toml
     eval21 describe --data cubes/
     eval21 list-metrics
     eval21 selftest
     eval21 demo --out demo/
     eval21 plot all --run results/ --out figs/
+    eval21 plot list
 """
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from . import adapters, registry, report, selftest
@@ -57,7 +61,49 @@ def main(argv=None) -> int:
     run.add_argument("--device", default=None)
     run.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                      help="override a settings field (repeatable)")
+    run.add_argument("--z-range", default=None, metavar="ZMIN,ZMAX",
+                     help="cube caches: evaluate this LOS window; samples not valid over it are dropped")
+    run.add_argument("--draws", type=int, default=None,
+                     help="predictions per sample for stochastic/generative models (enables 'ensemble')")
+    run.add_argument("--mode", choices=["pointwise", "generative"], default=None,
+                     help="generative: skip voxel-by-voxel metrics and pointwise keys (r, IoU, RMSE)")
+    run.add_argument("--score-draw", choices=["first", "mean"], default=None,
+                     help="what the standard metrics score with --draws: one draw or the ensemble mean")
+    run.add_argument("--save-predictions", type=Path, default=None, metavar="DIR",
+                     help="store truth and prediction cubes of some samples for map figures "
+                          "(default: the first --save-n samples)")
+    run.add_argument("--save-n", type=int, default=8, help="samples to store (default 8; 0 = all)")
+    run.add_argument("--save-ids", default=None, help="comma list of sample ids to store instead")
     run.add_argument("--quiet", action="store_true")
+
+    build = sub.add_parser("build", help="build an eval21 cube cache (HDF5) from a folder of simulations")
+    build.add_argument("folder", type=Path, nargs="?", help="folder of simulation files")
+    build.add_argument("--out", type=Path, required=True, help="cache file (.h5)")
+    build.add_argument("--format", default="auto",
+                       help="21cmfast, loreli, npz, python:FILE.py[:Class] or auto (default)")
+    build.add_argument("--fields", default=None,
+                       help="comma list (default per source: 21cmfast density,xhi; loreli density,xhi,tb)")
+    build.add_argument("--targets", default=None, help="fields stored as targets (default xhi,tb)")
+    build.add_argument("--z-grid", default=None,
+                       help="native (default), uniform:ZMIN,ZMAX,N, comoving:ZMIN,ZMAX[,N] or FILE[.npy|.h5:key]")
+    build.add_argument("--transverse", type=int, default=None, help="resample the transverse plane to N cells")
+    build.add_argument("--splits", default=None,
+                       help="'test' (all) or e.g. train=0.8,val=0.1,test=0.1 (seeded shuffle)")
+    build.add_argument("--split-file", default=None,
+                       help="JSON {split: [ids]}, {id: split} or run_metadata.json (<split>_cone_ids)")
+    build.add_argument("--seed", type=int, default=0)
+    build.add_argument("--limit", type=int, default=None)
+    build.add_argument("--ids", default=None, help="comma list of sample ids to include")
+    build.add_argument("--shard", type=int, default=0)
+    build.add_argument("--num-shards", type=int, default=1)
+    build.add_argument("--merge", action="store_true", help="join the --num-shards shard files into --out")
+    build.add_argument("--remove-shards", action="store_true", help="with --merge: delete the shards")
+    build.add_argument("--workers", type=int, default=1)
+    build.add_argument("--dtype", choices=["float32", "float16"], default="float32")
+    build.add_argument("--compress", choices=["gzip", "lzf"], default=None)
+    build.add_argument("--option", action="append", default=[], metavar="KEY=VALUE",
+                       help="source option, e.g. --option l_perp=300 --option pattern='*.h5'")
+    build.add_argument("--quiet", action="store_true")
 
     describe = sub.add_parser("describe", help="summarise a dataset")
     describe.add_argument("--data", required=True)
@@ -77,17 +123,22 @@ def main(argv=None) -> int:
     demo.add_argument("--quiet", action="store_true")
 
     plot = sub.add_parser("plot", help="figures from result directories (needs matplotlib)")
-    plot.add_argument("kind", choices=["cyl", "gallery", "deltas", "summary", "all"])
-    plot.add_argument("--run", action="append", required=True, type=Path,
+    plot.add_argument("figures", nargs="+", metavar="FIGURE",
+                      help="figure or group names, 'all', or 'list' (prints the registry)")
+    plot.add_argument("--run", action="append", default=[], type=Path,
                       help="result directory or a tree of them (repeatable)")
-    plot.add_argument("--out", type=Path, required=True)
+    plot.add_argument("--out", type=Path, default=None)
+    plot.add_argument("--store", type=Path, default=None,
+                      help="prediction store (default: a 'predictions' directory next to the results)")
+    plot.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE",
+                      help="figure option (repeatable), e.g. --opt vmax=0.5")
     plot.add_argument("--models", default=None, help="comma list and order of models (default: all)")
     plot.add_argument("--style", type=Path, default=None,
                       help='JSON {model: {"label": ..., "color": ..., "ls": ...}}')
     plot.add_argument("--ids", default=None, help="comma list of sample ids for gallery/deltas")
     plot.add_argument("--title", default="", help="data set named in figure titles")
-    plot.add_argument("--vmax", type=float, default=0.4, help="cyl: colour saturation of P_pred/P_true - 1")
-    plot.add_argument("--dead", type=float, default=None, help="cyl: white band (default: the run's cyl_dead_band)")
+    plot.add_argument("--vmax", type=float, default=None, help="cyl: colour saturation (same as --opt vmax=)")
+    plot.add_argument("--dead", type=float, default=None, help="cyl: white band (same as --opt dead=)")
     plot.add_argument("--quiet", action="store_true")
 
     args = parser.parse_args(argv)
@@ -95,6 +146,8 @@ def main(argv=None) -> int:
         return _plot(args)
     if args.command == "run":
         return _run(args)
+    if args.command == "build":
+        return _build(args)
     if args.command == "describe":
         return _describe(args)
     if args.command == "list-metrics":
@@ -155,6 +208,10 @@ def _run(args) -> int:
             raise SystemExit(f"--set expects KEY=VALUE, got {item!r}")
         key, value = item.split("=", 1)
         settings_values[key] = _parse_value(value)
+    for key in ("draws", "mode", "score_draw"):
+        value = getattr(args, key, None)
+        if value is not None:
+            settings_values[key] = value
     settings = Settings.from_dict(settings_values)
 
     metrics_section = config.get("metrics", {})
@@ -166,9 +223,13 @@ def _run(args) -> int:
         names = ["all"]
     options = config.get("metric_options", {})
 
+    z_range = pick(getattr(args, "z_range", None), "z_range", None)
+    if isinstance(z_range, str):
+        z_range = tuple(float(v) for v in z_range.split(","))
+    extra = {} if z_range is None else {"z_range": z_range}
     dataset = open_data(
         data_spec, target=target, density=density, split=None,
-        limit=None, box_mpc=box_override)
+        limit=None, box_mpc=box_override, **extra)
     selection = _resolve_selection(dataset, args, run_section, split)
     if selection is not None:
         # An explicit row selection already encodes the split; a second split
@@ -193,6 +254,12 @@ def _run(args) -> int:
                   "to reuse a checkpoint's test split.")
         print(f"metrics {', '.join(registry.available()) if names == ['all'] else ', '.join(names)}")
 
+    store = None
+    if getattr(args, "save_predictions", None) is not None:
+        from .store import PredictionStore
+        save_ids = [i.strip() for i in args.save_ids.split(",")] if args.save_ids else None
+        store = PredictionStore(args.save_predictions, ids=save_ids, n=None if args.save_n == 0 else args.save_n)
+
     results = []
     for name, spec in models.items():
         if not args.quiet:
@@ -204,7 +271,7 @@ def _run(args) -> int:
         result = evaluate(
             adapter, dataset, settings, names, options,
             progress=None if args.quiet else _progress(name),
-            expect_shape=expect_shape,
+            expect_shape=expect_shape, store=store, model_name=name,
         )
         result.name = name
         results.append(result)
@@ -222,24 +289,81 @@ def _run(args) -> int:
 
 def _plot(args) -> int:
     from . import viz
+    from .store import PredictionStore
 
+    if args.figures == ["list"]:
+        figures = viz.load_all()
+        for group in sorted({f.group for f in figures.values()}):
+            print(f"[{group}]")
+            for f in figures.values():
+                if f.group == group:
+                    print(f"  {f.name:28s} {'(stored cubes) ' if 'store' in f.needs else ''}{f.help}")
+        return 0
+    if not args.run or args.out is None:
+        raise SystemExit("eval21 plot: --run and --out are required")
     style = json.loads(args.style.read_text()) if args.style else None
     models = [m.strip() for m in args.models.split(",")] if args.models else None
     ids = [i.strip() for i in args.ids.split(",")] if args.ids else None
     catalog = viz.Catalog(viz.find_runs(args.run), models=models, style=style, quiet=args.quiet)
+    options = {}
+    for item in args.opt:
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise SystemExit(f"--opt expects KEY=VALUE, got {item!r}")
+        options[key] = _parse_value(value)
+    for key in ("vmax", "dead"):
+        if getattr(args, key) is not None:
+            options[key] = getattr(args, key)
+    store = None
+    candidates = [args.store] if args.store else _store_candidates(args.run)
+    for path in candidates:
+        if path is not None and (Path(path) / "index.json").exists():
+            store = PredictionStore.open(path)
+            break
+    if args.store and store is None:
+        raise SystemExit(f"no prediction store at {args.store}")
     if not args.quiet:
         print(f"models {catalog.models}; targets {catalog.targets}; groups "
-              + ", ".join(f"{t}: {len(catalog.groups[t])}" for t in catalog.targets))
-    if args.kind in ("cyl", "all"):
-        viz.plot_cylindrical(catalog, args.out, vmax=args.vmax, dead=args.dead,
-                             title=args.title or None, quiet=args.quiet)
-    if args.kind in ("gallery", "all"):
-        viz.plot_gallery(catalog, args.out / "gallery", ids=ids, quiet=args.quiet)
-    if args.kind in ("deltas", "all"):
-        viz.plot_deltas(catalog, args.out / "deltas", ids=ids, quiet=args.quiet)
-    if args.kind in ("summary", "all"):
-        viz.plot_summary(catalog, args.out, title=args.title, quiet=args.quiet)
+              + ", ".join(f"{t}: {len(catalog.groups[t])}" for t in catalog.targets)
+              + (f"; store {store.dir} ({len(store.samples)} samples)" if store else "; no prediction store"))
+    ctx = viz.PlotContext(catalog=catalog, out=args.out, store=store, ids=ids, title=args.title,
+                          options=options, quiet=args.quiet)
+    viz.run(args.figures, ctx)
     return 0
+
+
+def _build(args) -> int:
+    from . import build as builder
+
+    if args.merge:
+        builder.merge(args.out, args.num_shards, quiet=args.quiet, remove=args.remove_shards)
+        return 0
+    if args.folder is None:
+        raise SystemExit("eval21 build: give the simulation folder")
+    options = {}
+    for item in args.option:
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise SystemExit(f"--option expects KEY=VALUE, got {item!r}")
+        options[key] = _parse_value(value)
+    split = lambda text: [v.strip() for v in text.split(",") if v.strip()] if text else None  # noqa: E731
+    builder.build(args.folder, args.out, fmt=args.format, fields=split(args.fields),
+                  targets=split(args.targets), z_grid=args.z_grid, transverse=args.transverse,
+                  splits=args.splits, split_file=args.split_file, seed=args.seed, limit=args.limit,
+                  ids=split(args.ids), shard=args.shard, num_shards=args.num_shards,
+                  workers=args.workers, dtype=args.dtype, compress=args.compress,
+                  source_options=options, quiet=args.quiet, command=" ".join(sys.argv))
+    return 0
+
+
+def _store_candidates(runs):
+    out = []
+    for run in runs:
+        run = Path(run)
+        for base in (run, run.parent, run.parent.parent):
+            out.append(base / "predictions")
+        out.extend(sorted(p.parent for p in run.rglob("predictions/index.json")))
+    return out
 
 
 def _describe(args) -> int:

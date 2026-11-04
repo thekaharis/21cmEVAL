@@ -20,6 +20,7 @@ from .base import Metric
 
 @register("efficiency")
 class EfficiencyMetrics(Metric):
+    pointwise = False
     needs = ()
 
     def __init__(self, settings, options=None):

@@ -11,6 +11,7 @@ from . import (  # noqa: F401  (registration side effects)
     edge,
     eft,
     efficiency,
+    ensemble,
     front,
     gallery,
     history,

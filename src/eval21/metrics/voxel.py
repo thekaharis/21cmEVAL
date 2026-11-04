@@ -21,6 +21,7 @@ from .base import Metric, median_band
 
 @register("voxel")
 class VoxelMetrics(Metric):
+    pointwise = True
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.n = 0

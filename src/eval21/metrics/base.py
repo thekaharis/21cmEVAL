@@ -20,6 +20,17 @@ class Metric:
 
     name = ""
     needs: tuple[str, ...] = ()
+    # True: compares prediction and truth voxel by voxel (meaningless for a generative model,
+    # whose maps need not align with the truth); "partial": some keys are pointwise (e.g. the
+    # coherence r(k) next to the power ratio); False: compares distributions only.
+    pointwise: bool | str = False
+    # target fields the metric is defined for (None: any). History, bubbles, fronts, morphology
+    # and the observable are x_HI statistics; a T_b pass skips them with a reason.
+    targets: tuple[str, ...] | None = None
+    # result keys (substrings, at any depth) that are pointwise in a "partial" metric
+    pointwise_keys: tuple[str, ...] = ()
+    # True: the metric reads every draw of a stochastic model from ``aux["draws"]``
+    wants_draws = False
 
     def __init__(self, settings: Settings, options: dict[str, Any] | None = None):
         self.settings = settings
@@ -46,9 +57,23 @@ class Metric:
     def prediction(self, prediction):
         return np.asarray(prediction[self.settings.target], dtype=np.float64)
 
-    def stages(self, truth):
+    def stage_xbar(self, sample, truth=None):
+        """Slice means that define the reionization stages.
+
+        The true x_HI (``Settings.stage_field``, a target or an input of the sample) when the
+        sample carries it, so a T_b pass is staged exactly like the x_HI pass; otherwise the
+        target itself."""
+        field = self.settings.stage_field
+        for source in (sample.targets, sample.inputs):
+            value = source.get(field) if field else None
+            if value is not None and np.ndim(value) == 3:
+                return np.asarray(value, dtype=np.float64).mean(axis=(0, 1))
+        truth = self.target(sample) if truth is None else truth
+        return truth.mean(axis=(0, 1))
+
+    def stages(self, truth, sample=None):
         masks = stage_masks(
-            truth.mean(axis=(0, 1)),
+            truth.mean(axis=(0, 1)) if sample is None else self.stage_xbar(sample, truth),
             self.settings.stage_edges,
             self.settings.active_range,
             self.settings.min_stage_slices,

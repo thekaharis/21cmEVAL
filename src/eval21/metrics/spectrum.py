@@ -23,6 +23,8 @@ from .base import Metric, median_band
 
 @register("spectrum")
 class SpectrumMetrics(Metric):
+    pointwise = "partial"
+    pointwise_keys = ('coherence', 'k_r90')   # dropped in generative mode
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.records: list[dict] = []
@@ -51,7 +53,7 @@ class SpectrumMetrics(Metric):
         cross = binner.cross_sums(t, p)
 
         masks = stage_masks(
-            truth.mean(axis=(0, 1)),
+            self.stage_xbar(sample, truth),
             self.settings.stage_edges,
             self.settings.active_range,
         )

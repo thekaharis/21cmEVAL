@@ -22,7 +22,8 @@ class Settings:
     omega_b: float = 0.04897
     hubble_h: float = 0.6766
 
-    # stages
+    # stages (slice means of ``stage_field`` when the sample carries it, else of the target)
+    stage_field: str = "xhi"
     threshold: float = 0.5
     stage_edges: tuple[float, ...] = (0.02, 0.2, 0.4, 0.6, 0.8, 0.98)
     active_range: tuple[float, float] = (0.05, 0.95)
@@ -74,6 +75,15 @@ class Settings:
     gallery_stages: tuple[float, ...] = (0.8, 0.6, 0.4, 0.2)
     gallery_fields: tuple[str, ...] = ("xhi", "tb")
 
+    # stochastic / generative models (``ensemble``; ``eval21 run --draws N --mode generative``)
+    draws: int = 1                               # predictions per sample (1 = deterministic model)
+    mode: str = "pointwise"                      # "generative": skip voxel-by-voxel metrics
+    score_draw: str = "first"                    # what the standard metrics score: "first" or "mean"
+    ensemble_voxels: int = 200_000               # voxels per sample for CRPS / rank histograms
+    ensemble_n_los: int = 16                     # LOS positions of the x_bar(z) PITs
+    ensemble_k: tuple[float, ...] = (0.1, 0.3, 1.0)   # 1/Mpc, power PITs per stage
+    store_draws: int = 4                         # draws kept per sample by --save-predictions
+
     # efficiency
     warmup: int = 3
     iters: int = 10
@@ -82,6 +92,12 @@ class Settings:
     def __post_init__(self):
         if self.box_mpc <= 0:
             raise ValueError("box_mpc must be positive")
+        if self.mode not in ("pointwise", "generative"):
+            raise ValueError("mode must be 'pointwise' or 'generative'")
+        if self.score_draw not in ("first", "mean"):
+            raise ValueError("score_draw must be 'first' or 'mean'")
+        if self.draws < 1:
+            raise ValueError("draws must be at least 1")
         if not 0 < self.threshold < 1:
             raise ValueError("threshold must lie strictly between 0 and 1")
         edges = tuple(self.stage_edges)
@@ -149,6 +165,7 @@ _TUPLES = {
     "stage_edges", "active_range", "k_targets", "front_bands_mpc",
     "xhi_range", "partial_range", "dtb_range_mk",
     "cyl_stages", "cyl_z_centers", "gallery_ids", "gallery_stages", "gallery_fields",
+    "ensemble_k",
 }
 
 

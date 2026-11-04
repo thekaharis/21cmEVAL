@@ -24,6 +24,9 @@ FRACTIONS = (0.1, 0.25, 0.5, 0.75, 0.9)
 
 @register("morphology")
 class MorphologyMetrics(Metric):
+    pointwise = "partial"
+    pointwise_keys = ('iou',)   # dropped in generative mode
+    targets = ('xhi',)
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.truth: list[dict] = []

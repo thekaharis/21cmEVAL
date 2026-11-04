@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .registry import figure
 from .common import field_name, pyplot, save
 
 
@@ -151,3 +152,10 @@ def _same_mode(cat, target):
     if len(modes) != 1:
         raise SystemExit(f"cylindrical: runs of target {target!r} mix chunk modes {sorted(modes)}")
     return modes.pop()
+
+
+@figure("cyl", group="spectra", help="cylindrical P_pred/P_true - 1 maps (white dead band), rows = models")
+def _fig_cyl(ctx):
+    plot_cylindrical(ctx.catalog, ctx.out, vmax=float(ctx.options.get("vmax", 0.4)),
+                     dead=None if "dead" not in ctx.options else float(ctx.options["dead"]),
+                     title=ctx.title or None, quiet=ctx.quiet)

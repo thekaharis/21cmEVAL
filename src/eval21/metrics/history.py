@@ -25,6 +25,8 @@ from .base import Metric, nanmedian
 
 @register("history")
 class HistoryMetrics(Metric):
+    pointwise = False
+    targets = ('xhi',)
     needs = ()
 
     def __init__(self, settings, options=None):

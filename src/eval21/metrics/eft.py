@@ -40,6 +40,7 @@ from .base import Metric, nanmedian
 
 @register("eft")
 class EftMetrics(Metric):
+    pointwise = False           # compares field-density relations, not truth voxels
     needs = ("density",)
 
     def __init__(self, settings, options=None):
@@ -72,7 +73,7 @@ class EftMetrics(Metric):
             "pp": binner.slice_sums(u_p),
         }
         masks = stage_masks(
-            truth.mean(axis=(0, 1)),
+            self.stage_xbar(sample, truth),
             self.settings.stage_edges,
             self.settings.active_range,
         )

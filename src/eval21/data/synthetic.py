@@ -44,7 +44,9 @@ def make_cone(shape=(64, 64, 64), box_mpc: float = 200.0, seed: int = 0,
     z = np.linspace(z_min, z_max, nz)
 
     delta = _power_law_field(rng, shape, slope=-2.5)
-    density = np.exp(0.3 * delta - 0.5 * 0.3 ** 2)
+    # lognormal overdensity delta = rho/rho_bar - 1 (eval21's ``density`` convention, as in
+    # 21cmFAST lightcones; mean ~0, > -1)
+    density = np.exp(0.3 * delta - 0.5 * 0.3 ** 2) - 1.0
     density = density.astype(np.float32)
 
     # Reionization proceeds from low to high z: the neutral fraction grows.

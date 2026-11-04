@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .registry import figure
 from .common import pyplot, save
 
 LABEL = {"xhi": "x$_{HI}$", "tb": "T$_b$"}
@@ -178,3 +179,13 @@ def plot_deltas(cat, out: Path, field="xhi", ids=None, quiet=False):
             suffix = "" if len(pages) == 1 else f" ({n}/{len(pages)})"
             written.append(page(rows, out / name, f"Prediction − truth at x̄_HI ≈ {stage:.1f}{suffix}"))
     return written
+
+
+@figure("gallery", group="maps", help="per-sample gallery: stages x (x_HI | T_b) truth / models / residuals")
+def _fig_gallery(ctx):
+    return plot_gallery(ctx.catalog, ctx.out / "gallery", ids=ctx.ids, quiet=ctx.quiet)
+
+
+@figure("deltas", group="maps", help="prediction - truth per stage, per sample, plus overview pages")
+def _fig_deltas(ctx):
+    return plot_deltas(ctx.catalog, ctx.out / "deltas", ids=ctx.ids, quiet=ctx.quiet)

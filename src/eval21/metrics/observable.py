@@ -38,6 +38,8 @@ from .base import Metric, nanmedian
 
 @register("observable")
 class ObservableMetrics(Metric):
+    pointwise = False
+    targets = ('xhi',)
     needs = ("density",)
 
     def __init__(self, settings, options=None):

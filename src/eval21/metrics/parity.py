@@ -22,6 +22,7 @@ from .base import Metric
 
 @register("parity")
 class ParityMetrics(Metric):
+    pointwise = True
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.n_true = 50

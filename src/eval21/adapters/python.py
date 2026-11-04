@@ -4,6 +4,11 @@ The file must define ``predict(sample) -> dict[str, ndarray]`` (or the name
 given after the path, e.g. ``python:model.py:forward``). It may also define
 ``describe() -> dict`` and ``close()``; the suite calls them when present.
 
+Stochastic / generative models (``--draws N``): ``predict(sample, draw=i)`` gets the draw
+index (seed your sampler with it for reproducible runs), or ``predict_draws(sample, n)``
+returns all draws at once as ``{target: (n, Nx, Ny, Nz)}``; ``predict`` may also return a
+(n, Nx, Ny, Nz) target directly.
+
 This is the escape hatch for research code: no packaging, no registry, no
 inheritance. The same file works with any framework the process can import.
 """
@@ -43,10 +48,23 @@ class PythonModelAdapter(BaseAdapter):
         self.path = Path(path).expanduser()
         self.attribute = attribute
         self.module, self._predict = _load(self.path, attribute)
+        import inspect
+
+        try:
+            params = inspect.signature(self._predict).parameters
+            self._takes_draw = "draw" in params or any(
+                p.kind == p.VAR_KEYWORD for p in params.values())
+        except (TypeError, ValueError):
+            self._takes_draw = False
+        draws = getattr(self.module, "predict_draws", None)
+        if callable(draws):
+            self.predict_draws = draws
         describe = getattr(self.module, "describe", None)
         self._describe = describe() if callable(describe) else {}
 
-    def predict(self, sample: Sample) -> dict:
+    def predict(self, sample: Sample, draw: int | None = None) -> dict:
+        if draw is not None and self._takes_draw:
+            return self._predict(sample, draw=draw)
         return self._predict(sample)
 
     def describe(self) -> dict:

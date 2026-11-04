@@ -18,6 +18,7 @@ from .cylindrical import true_xhi
 
 @register("gallery")
 class GalleryMetric(Metric):
+    pointwise = False
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.levels = tuple(float(s) for s in self.settings.gallery_stages)

@@ -11,8 +11,9 @@ runs of one target on different data are pooled as groups. ``--style`` is a JSON
 ``{model: {"label": ..., "color": ..., "ls": ...}}``.
 """
 from .common import Catalog, Run, find_runs
+from .registry import PlotContext, SkipFigure, figure, load_all, run
 from .cylindrical import plot_cylindrical
 from .slices import plot_deltas, plot_gallery
 from .summary import plot_summary
 
-__all__ = ["Catalog", "Run", "find_runs", "plot_cylindrical", "plot_gallery", "plot_deltas", "plot_summary"]
+__all__ = ["Catalog", "Run", "find_runs", "PlotContext", "SkipFigure", "figure", "load_all", "run", "plot_cylindrical", "plot_gallery", "plot_deltas", "plot_summary"]

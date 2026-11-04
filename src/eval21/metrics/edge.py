@@ -22,6 +22,7 @@ from .base import Metric
 
 @register("edge")
 class EdgeMetrics(Metric):
+    pointwise = True
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.ss_edge = 0.0

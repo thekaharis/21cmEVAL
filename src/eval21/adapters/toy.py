@@ -24,8 +24,8 @@ class SmoothThresholdModel(BaseAdapter):
         self.threshold = threshold
 
     def predict(self, sample: Sample) -> dict:
-        density = np.asarray(sample.inputs["density"], dtype=np.float64)
-        delta = np.log(np.maximum(density, 1e-6))
+        density = np.asarray(sample.inputs["density"], dtype=np.float64)   # overdensity delta
+        delta = np.log(np.maximum(1.0 + density, 1e-6))
         smoothed = gaussian_filter(delta, sigma=(self.sigma, self.sigma, 0))
         z = sample.meta.z_grid
         shape = smoothed.shape
@@ -46,3 +46,26 @@ class SmoothThresholdModel(BaseAdapter):
         info = super().describe()
         info.update({"sigma": self.sigma, "width": self.width})
         return info
+
+
+class ToyGenerativeModel(SmoothThresholdModel):
+    """A parameters-only "generative model": x_HI from a fresh random field per draw.
+
+    It reads no input field: each draw thresholds a Gaussian random field (seeded by the sample
+    id and the draw index) with the same z-dependent ionized fraction as
+    :class:`SmoothThresholdModel`. Its maps do not align with the truth, its statistics roughly
+    do -- the case ``--mode generative --draws N`` is built for.
+    """
+
+    framework = "synthetic-generative"
+
+    def predict(self, sample: Sample, draw: int = 0) -> dict:
+        import zlib
+
+        shape = sample.shape
+        seed = (zlib.crc32(str(sample.id).encode()) * 1009 + int(draw)) & 0xFFFFFFFF
+        rng = np.random.default_rng(seed)
+        field = rng.standard_normal(shape)
+        fake = sample.__class__(id=sample.id, inputs={"density": np.exp(0.5 * field) - 1.0},
+                                targets={}, meta=sample.meta)
+        return super().predict(fake)

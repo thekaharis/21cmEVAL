@@ -68,6 +68,8 @@ def column_label(mode: str, value: float) -> str:
 
 @register("cylindrical")
 class CylindricalMetrics(Metric):
+    pointwise = "partial"
+    pointwise_keys = ('coherence',)   # dropped in generative mode
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         s = self.settings

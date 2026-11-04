@@ -25,6 +25,8 @@ from .base import Metric, nanmedian
 
 @register("anisotropy")
 class AnisotropyMetrics(Metric):
+    pointwise = "partial"
+    pointwise_keys = ('coherence',)   # dropped in generative mode
     needs = ()
 
     def __init__(self, settings, options=None):

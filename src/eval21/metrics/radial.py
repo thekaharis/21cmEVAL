@@ -20,6 +20,8 @@ from .base import Metric, median_band
 
 @register("radial")
 class RadialMetrics(Metric):
+    pointwise = "partial"
+    pointwise_keys = ('coherence', 'k_r90')   # dropped in generative mode
     needs = ()
 
     def __init__(self, settings, options=None):

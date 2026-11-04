@@ -58,6 +58,10 @@ def build(spec: str, fno_root: str | None = None,
         return TorchModelAdapter(model, device=device, output_field=target)
     if adapter == "command":
         return CommandModelAdapter(argument)
+    if adapter in {"synthetic-generative", "toygen"}:
+        from .toy import ToyGenerativeModel
+
+        return ToyGenerativeModel(float(argument) if argument else 1.5)
     if adapter in {"synthetic", "toy"}:
         from .toy import SmoothThresholdModel
 
