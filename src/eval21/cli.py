@@ -7,6 +7,8 @@
     eval21 selftest
     eval21 demo --out demo/
     eval21 plot all --run results/ --out figs/
+    eval21 build 21cmfast /data/21cmfast --out cubes/fast --los nearest --z-grid 5.001,24.97,512
+    eval21 build loreli /data/loreli_lc128 --out cubes/loreli --los comoving --dry-run
 """
 from __future__ import annotations
 
@@ -90,7 +92,11 @@ def main(argv=None) -> int:
     plot.add_argument("--dead", type=float, default=None, help="cyl: white band (default: the run's cyl_dead_band)")
     plot.add_argument("--quiet", action="store_true")
 
+    _add_build_parser(sub)
+
     args = parser.parse_args(argv)
+    if args.command == "build":
+        return _build(args)
     if args.command == "plot":
         return _plot(args)
     if args.command == "run":
@@ -105,6 +111,138 @@ def main(argv=None) -> int:
         return _demo(args)
     parser.error(f"unknown command {args.command}")
     return 2
+
+
+def _add_build_parser(sub) -> None:
+    build = sub.add_parser(
+        "build", help="raw simulation lightcones -> eval21 npz cubes + manifest(s)",
+        description="Build an eval21 dataset (one npz per lightcone + manifest.json per geometry "
+                    "group) from raw 21cmFAST HDF5, LoReLi II .dat or generic per-file npz/h5 "
+                    "lightcones. Resumable: complete outputs with the same build signature are kept.")
+    build.add_argument("format", choices=["21cmfast", "loreli", "generic"])
+    build.add_argument("source", help="folder with the raw lightcone files")
+    build.add_argument("--out", type=Path, required=True, help="output directory")
+    g = build.add_argument_group("fields")
+    g.add_argument("--fields", default=None,
+                   help="comma list of eval21 names (xhi,tb,density,los_velocity,...) or name=source_key")
+    g.add_argument("--targets", default=None,
+                   help="comma list; the first is manifest.json's target, each other one gets "
+                        "manifest_<name>.json (default: xhi,tb where available)")
+    g.add_argument("--rsd", action="store_true", help="21cmfast: use the *_with_rsds fields")
+    g.add_argument("--density-convention", default=None,
+                   help="source density: delta | one_plus_delta | rho (21cmfast default delta, "
+                        "generic default one_plus_delta)")
+    g = build.add_argument_group("line of sight")
+    g.add_argument("--los", default="native", choices=["native", "nearest", "linear", "comoving"])
+    g.add_argument("--z-grid", default=None,
+                   help="z0,z1,n or a file (.npy, .npz z_grid, .json, text) for --los nearest|linear")
+    g.add_argument("--z-range", default=None, help="z0,z1: restrict the LOS window")
+    g.add_argument("--los-cell", type=float, default=None,
+                   help="--los comoving spacing [Mpc] (default: the transverse cell)")
+    g.add_argument("--allow-repeat", action="store_true",
+                   help="--los nearest: allow a native plane to be used twice")
+    g = build.add_argument_group("geometry")
+    g.add_argument("--crop", type=int, default=None, help="centred transverse crop to N x N cells")
+    g.add_argument("--crop-offset", default=None, help="X,Y corner of the crop instead of centred")
+    g.add_argument("--group", default=None,
+                   help="none (one manifest, cones cropped to the shared window), auto (cluster by "
+                        "valid window; loreli default) or a groups.json {name: {cones, z}}")
+    g.add_argument("--group-tol", type=float, default=0.15,
+                   help="--group auto: max spread in first valid redshift within a group")
+    g.add_argument("--min-planes", type=int, default=8)
+    g = build.add_argument_group("selection and splits")
+    g.add_argument("--ids", default=None, help="e.g. 0-99,250 or 10001-10010 (simulation numbers)")
+    g.add_argument("--limit", type=int, default=None)
+    g.add_argument("--only-split", default=None, help="build only cones of this split")
+    g.add_argument("--split", default=None, help="one split name for every cone")
+    g.add_argument("--split-file", type=Path, default=None, help="JSON {train: [ids], val: [...], test: [...]}")
+    g.add_argument("--split-from", type=Path, default=None,
+                   help="fno-21cm run_metadata.json (split.<name>_cone_ids)")
+    g.add_argument("--split-fractions", default=None, help="train,val,test fractions (seeded hash per id)")
+    g.add_argument("--seed", type=int, default=0)
+    g.add_argument("--id-format", default="cone{id}", help="sample id / file name, default cone{id}")
+    g = build.add_argument_group("output")
+    g.add_argument("--dtype", default="float32", choices=["float32", "float16"],
+                   help="storage dtype (float16 falls back to float32 per field when unsafe)")
+    g.add_argument("--compress", action="store_true", help="np.savez_compressed")
+    g.add_argument("--workers", type=int, default=1)
+    g.add_argument("--nonfinite", default="skip", choices=["skip", "error"],
+                   help="cone with non-finite output values: skip it (listed in the manifest) or stop")
+    g.add_argument("--overwrite", action="store_true", help="rebuild existing outputs")
+    g.add_argument("--dry-run", action="store_true",
+                   help="print files, fields, shapes, groups and size; writes only the scan cache")
+    g.add_argument("--quiet", action="store_true")
+    g = build.add_argument_group("loreli")
+    g.add_argument("--loreli-kind", default="five", choices=["five", "dtb"],
+                   help="five-field files (xhi, tb, density, ...) or dT_b-only files")
+    g.add_argument("--l-perp", type=float, default=None, help="transverse size [Mpc] (default 294)")
+    g.add_argument("--density-mean", default=None, choices=["slice", "cone"])
+    g.add_argument("--loreli-params", type=Path, default=None,
+                   help="loreli2_parameters.json: parameter values/status instead of the grid rule")
+    g = build.add_argument_group("generic / file pattern")
+    g.add_argument("--pattern", default=None, help="glob of the lightcone files")
+    g.add_argument("--z-key", default=None)
+    g.add_argument("--z-native", default=None, help="z0,z1: native planes uniform in z")
+    g.add_argument("--distance-key", default=None)
+    g.add_argument("--params-key", default=None)
+    g.add_argument("--param-names", default=None, help="comma list for bare parameter arrays")
+    g.add_argument("--box-mpc", default=None, help="number, dataset key or root attribute")
+    g.add_argument("--omega-m", default=None, help="number, key or attribute")
+    g.add_argument("--omega-m-param", default=None, help="parameter name holding Omega_m")
+    g.add_argument("--hubble-h", type=float, default=None)
+    g.add_argument("--los-axis", type=int, default=None)
+    g.add_argument("--id-regex", default=None, help="regex with one group: id from the file stem")
+
+
+def _pair(text, kind=float):
+    if text is None:
+        return None
+    parts = [part.strip() for part in str(text).split(",")]
+    if len(parts) != 2:
+        raise SystemExit(f"expected two comma-separated values, got {text!r}")
+    return tuple(kind(part) for part in parts)
+
+
+def _build(args) -> int:
+    import sys
+
+    from .build import BuildError, BuildOptions, build, make_source
+
+    split = lambda text: [part.strip() for part in text.split(",") if part.strip()] if text else None
+    fractions = None
+    if args.split_fractions:
+        fractions = tuple(float(v) for v in args.split_fractions.split(","))
+    source_options = {
+        "rsd": args.rsd, "density_convention": args.density_convention,
+        "loreli_kind": args.loreli_kind, "l_perp": args.l_perp, "density_mean": args.density_mean,
+        "loreli_params": str(args.loreli_params) if args.loreli_params else None,
+        "pattern": args.pattern, "z_key": args.z_key, "z_native": args.z_native,
+        "distance_key": args.distance_key, "params_key": args.params_key,
+        "param_names": split(args.param_names), "box_mpc": args.box_mpc, "omega_m": args.omega_m,
+        "omega_m_param": args.omega_m_param, "hubble_h": args.hubble_h, "los_axis": args.los_axis,
+        "id_regex": args.id_regex,
+    }
+    try:
+        options = BuildOptions(
+            out=args.out, fields=split(args.fields), targets=split(args.targets), los=args.los,
+            z_grid=args.z_grid, z_range=_pair(args.z_range), los_cell=args.los_cell,
+            allow_repeat=args.allow_repeat, crop=args.crop, crop_offset=_pair(args.crop_offset, int),
+            dtype=args.dtype, compress=args.compress, workers=max(1, args.workers), limit=args.limit,
+            ids=args.ids, only_split=args.only_split, split=args.split, split_file=args.split_file,
+            split_from=args.split_from, split_fractions=fractions, seed=args.seed, group=args.group,
+            group_tol=args.group_tol, min_planes=args.min_planes, id_format=args.id_format,
+            nonfinite=args.nonfinite, overwrite=args.overwrite, dry_run=args.dry_run,
+            quiet=args.quiet, argv=list(sys.argv),
+            source_options={k: v for k, v in source_options.items() if v not in (None, False)})
+        source = make_source(args.format, args.source, options)
+        build(source, options, log=lambda *a: print(*a, flush=True))
+    except (BuildError, ValueError, FileNotFoundError, KeyError) as exc:
+        import os
+
+        if os.environ.get("EVAL21_DEBUG"):
+            raise
+        raise SystemExit(f"eval21 build: {exc}") from None
+    return 0
 
 
 def _load_config(path: Path | None) -> dict:

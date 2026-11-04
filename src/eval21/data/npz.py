@@ -88,7 +88,9 @@ class NpzDataset(BaseDataset):
         inputs = manifest.get("inputs")
         target = manifest.get("target", self.target)
         samples = []
+        self._cone_ids = []
         for index, entry in enumerate(manifest.get("samples", [])):
+            self._cone_ids.append(entry.get("cone_id"))
             path = self.root / entry["path"]
             context = {
                 "id": entry.get("id", path.stem),
@@ -159,8 +161,12 @@ class NpzDataset(BaseDataset):
         )
 
     def row_indices_for_ids(self, ids) -> list[int]:
+        """Rows of recorded ids: sample ids, else a manifest entry's ``cone_id`` (eval21 build)."""
         samples = self._samples()
         position = {sample.id: index for index, sample in enumerate(samples)}
+        for index, cone in enumerate(getattr(self, "_cone_ids", None) or []):
+            if cone is not None:
+                position.setdefault(str(cone), index)
         missing = [str(value) for value in ids if str(value) not in position]
         if missing:
             raise KeyError(
