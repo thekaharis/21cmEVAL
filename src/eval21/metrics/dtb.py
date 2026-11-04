@@ -32,7 +32,7 @@ from .cylindrical import true_xhi
 
 @register("dtb")
 class DtbMetrics(Metric):
-    needs = ("xhi",)
+    needs = ()
 
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
@@ -52,7 +52,7 @@ class DtbMetrics(Metric):
 
     def update(self, sample, prediction, aux=None, runtime=None):
         xhi = true_xhi(sample, self.settings.target)
-        if xhi is None:
+        if xhi is None or self.settings.target == "xhi":     # needs a T_b target staged by x_HI
             self.skipped += 1
             return
         truth = self.target(sample)
@@ -104,7 +104,7 @@ class DtbMetrics(Metric):
 
     def result(self):
         if not self.rows:
-            return {"note": "no sample with a true x_HI (input 'xhi') to stage the T_b field"}
+            return {"note": "needs a T_b target and the true x_HI (input 'xhi') to stage it"}
         labels = stage_labels(self.settings.stage_edges, self.settings.active_range)
         k = self._binner[1].centers
         targets = self.rows[0]["targets"]
