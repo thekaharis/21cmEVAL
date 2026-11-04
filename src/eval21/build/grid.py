@@ -30,8 +30,8 @@ def parse_z_grid(spec: str | None, cell_mpc: float | None = None, omega_m: float
     if spec is None or spec == "native":
         return None
     kind, sep, rest = spec.partition(":")
-    if not sep:
-        kind, rest = "file", spec
+    if not sep or kind not in ("uniform", "comoving", "file"):
+        kind, rest = "file", spec            # a bare path, possibly FILE.h5:key
     if kind == "uniform":
         z0, z1, n = rest.split(",")
         return np.linspace(float(z0), float(z1), int(n))

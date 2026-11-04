@@ -43,6 +43,10 @@ def test_grid_parsing_and_interpolation(tmp_path):
     assert np.allclose(z, [5, 5.5, 6, 6.5, 7])
     np.save(tmp_path / "g.npy", z)
     assert np.allclose(parse_z_grid(str(tmp_path / "g.npy")), z)
+    with h5py.File(tmp_path / "c.h5", "w") as f:
+        f["target_z"] = z
+    assert np.allclose(parse_z_grid(f"{tmp_path / 'c.h5'}:target_z"), z)
+    assert np.allclose(parse_z_grid(str(tmp_path / "c.h5")), z)
     zc = parse_z_grid("comoving:6,8", cell_mpc=10.0)
     from eval21.physics import comoving_distance_mpc
     assert np.allclose(np.diff(comoving_distance_mpc(zc)), 10.0, atol=0.05)
