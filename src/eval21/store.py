@@ -111,8 +111,23 @@ class PredictionStore:
     def draws(self, model: str) -> int:
         return int(self.index["draws"].get(model, 1))
 
+    def resolve(self, sample_id) -> str:
+        """Stored id for ``sample_id``; '1001' finds 'cone1001' (and vice versa), as figure
+        file names drop the 'cone' prefix."""
+        sid = str(sample_id)
+        if sid in self.index["samples"]:
+            return sid
+        short = re.fullmatch(r"(?:cone_?)?(\d+)", sid)
+        for stored in self.index["samples"]:
+            other = re.fullmatch(r"(?:cone_?)?(\d+)", stored)
+            if short and other and short.group(1) == other.group(1):
+                return stored
+        raise KeyError(f"sample {sid!r} is not in the prediction store {self.dir} "
+                       f"(stored: {', '.join(self.index['samples'][:8])}...)")
+
     def truth(self, sample_id) -> dict:
         """{"targets": {...}, "inputs": {...}, "z_grid", "box_mpc", "omega_m", "params"} as float32."""
+        sample_id = self.resolve(sample_id)
         with np.load(self.dir / "truth" / f"{_safe(sample_id)}.npz") as d:
             out = {"targets": {}, "inputs": {}, "z_grid": d["z_grid"] if "z_grid" in d.files else None,
                    "box_mpc": float(d["box_mpc"]), "omega_m": float(d["omega_m"]),
@@ -125,6 +140,7 @@ class PredictionStore:
         return out
 
     def prediction(self, model: str, sample_id) -> dict:
+        sample_id = self.resolve(sample_id)
         path = self.dir / _safe(model) / f"{_safe(sample_id)}.npz"
         if not path.exists():
             return {}
@@ -132,4 +148,8 @@ class PredictionStore:
             return {k: d[k].astype(np.float32) for k in d.files}
 
     def has(self, model: str, sample_id) -> bool:
+        try:
+            sample_id = self.resolve(sample_id)
+        except KeyError:
+            return False
         return (self.dir / _safe(model) / f"{_safe(sample_id)}.npz").exists()

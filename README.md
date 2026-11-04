@@ -67,7 +67,7 @@ A sample is one lightcone: named inputs, named targets, geometry.
 ```python
 Sample(
     id="cone0000",
-    inputs={"density": (Nx, Ny, Nz)},   # evolved matter density, mean 1
+    inputs={"density": (Nx, Ny, Nz)},   # matter overdensity δ = ρ/ρ̄ − 1 (mean 0), as in 21cmFAST
     targets={"xhi": (Nx, Ny, Nz)},      # neutral fraction in [0, 1]
     meta=Meta(box_mpc=200.0, z_grid=(Nz,), omega_m=0.30966),
 )
@@ -76,7 +76,15 @@ Sample(
 Arrays are `(Nx, Ny, Nz)`: `x`/`y` periodic transverse axes, `z` the
 lightcone axis. Physics metrics use `density`; a sample without it is still
 scored on every metric that needs only `xhi` (the others are listed under
-`skipped` in the report).
+`skipped` in the report). Inputs may be empty: a model conditioned on the
+simulation parameters alone reads `sample.meta.params`.
+
+A run scores one target field (`--target xhi` or `--target tb`; it sets the
+data field, the adapter output and `Settings.target` together). Metrics that
+are x_HI statistics (`history`, `bubble`, `morphology`, `front`, `observable`)
+skip a T_b pass with a reason. Stages are always binned by the **true x_HI**
+slice mean when the sample carries x_HI (a target or an input, `stage_field`),
+so an x_HI and a T_b pass of the same cones use identical stage slices.
 
 ### Saved cubes (`.npz`)
 
@@ -136,6 +144,46 @@ them through the cache's `cone_id`, falling back to `test_indices` only when
 the file has no ids; a recorded cone that is missing from the cache is an
 error, not a silent omission.
 
+### eval21 cube caches (`eval21 build`)
+
+`eval21 build` turns a folder of simulations into one HDF5 cube cache that the
+library reads natively (`--data cache.h5` detects it by its `format` attribute):
+
+```bash
+# 21cmFAST lightcones on fno-21cm's 512-plane envelope grid (identical to cubes_3d_envelope512.h5)
+eval21 build /work/data/data --out fast.h5 --format 21cmfast --fields density,xhi,tb \
+    --z-grid /work/data/compressed/cubes_3d_envelope512.h5:target_z --splits train=0.8,val=0.1,test=0.1
+
+# LoReLi II five-field cones, native grid (128², 1536 planes uniform in z = 5–15), parameters from the id
+eval21 build /work/data/loreli_lc128 --out loreli.h5 --format loreli --workers 4
+
+# any folder of per-sample npz files (eval21's own cube format); every 3-D array becomes a field
+eval21 build cubes/ --out cubes.h5 --format npz
+
+# large sets: a Slurm array writes shards, one call joins them
+eval21 build sims/ --out big.h5 --shard $SLURM_ARRAY_TASK_ID --num-shards 32
+eval21 build --out big.h5 --merge --num-shards 32 --remove-shards
+```
+
+| option | meaning |
+|---|---|
+| `--format` | `21cmfast`, `loreli`, `npz`, `python:my_source.py:Class` (any class with `items()` and `read(item, fields)`, see `eval21.build.sources`), or `auto` |
+| `--fields` | canonical names `density` (overdensity δ), `xhi`, `tb` [mK]; other names pass through (21cmFAST lightcone keys, LoReLi `xa`, `tpHI`) |
+| `--targets` | fields stored as targets (default `xhi,tb`); the rest are inputs. Any field can still be a run's `--target` |
+| `--z-grid` | `native`, `uniform:ZMIN,ZMAX,N`, `comoving:ZMIN,ZMAX[,N]` (without N: cubic cells), or a file (`.npy`, `.txt`, `FILE.h5:key`); linear per-pixel interpolation like fno-21cm's `build_cubes` |
+| `--transverse N` | resample the transverse plane to N cells on the same box |
+| `--splits` / `--split-file` | `test`, seeded fractions, or a JSON map / `run_metadata.json` (`<split>_cone_ids`) |
+| `--dtype float16`, `--compress gzip\|lzf`, `--workers N`, `--limit`, `--ids` | size, speed, subsets |
+
+The cache stores `fields/<name>` `(N, Nx, Ny, Nz)`, the shared `z_grid`, a per-sample
+`valid` plane mask, ids, splits, Ω_m and parameters (`params/names`, `params/values`),
+plus provenance (`source`, `command`, `created`, `eval21_version`, `skipped`). Planes a
+simulation does not cover (outside its redshift range, LoReLi's empty or corrupt
+low-z tails) are marked invalid. A run over samples with invalid planes stops and
+names the widest common window; `eval21 run --z-range 8,12` evaluates that window
+and drops the samples that do not cover it (this is how the LoReLi cones split into
+redshift groups).
+
 ## Model adapters
 
 | spec | meaning |
@@ -145,6 +193,7 @@ error, not a silent omission.
 | `command:"python infer.py {input} {output}"` | any program: read npz, write npz |
 | `fno21cm:path/best_model_state_dict.pt` | fno-21cm run, uses its `run_metadata.json` |
 | `synthetic:1.5` | built-in smoothed-threshold toy model |
+| `toygen:1.5` | built-in toy *generative* model: a fresh random field per draw, no inputs |
 
 The Python adapter is the whole contract:
 
@@ -174,6 +223,36 @@ a `meta` JSON string (targets are deliberately withheld), and must write an
 npz with one array per target name. That is the escape hatch for Julia, C++
 or a cluster job.
 
+## Stochastic and generative models
+
+`--draws N` asks every model for N predictions per sample. The adapter supplies them as
+`predict(sample, draw=i)` (seed with `i` for reproducible runs), `predict_draws(sample, n)`
+returning `{target: (n, Nx, Ny, Nz)}`, or a `(n, Nx, Ny, Nz)` target from `predict`. The
+standard metrics then score one realisation (`--score-draw first`, the default) or the
+ensemble mean (`--score-draw mean`), and the `ensemble` metric scores the whole ensemble:
+
+* **voxel calibration** — fair CRPS, spread/skill ratio (1 = calibrated, also per stage),
+  rank histogram of the truth among the draws (ties broken at random, needed for x_HI
+  saturated at 0/1) with its χ², and rank-based coverage next to its exact nominal value;
+* **summary-statistic calibration** — for x̄(z) at 16 LOS positions, the history
+  z(x_HI = 0.25/0.5/0.75) and Δz, and Δ²(k) at `ensemble_k` per stage, the truth is
+  located among the draws: randomised PIT histograms (uniform when calibrated), KS
+  distance, coverage, mean z²;
+* **cosmic variance** — when several samples share identical parameters, the draw spread
+  is compared with the spread of their truths (≈ 1 is right; ≪ 1 is mode collapse).
+
+`--mode generative` is for models whose fields need not align with the truth voxel by
+voxel (a generator conditioned on parameters only). It skips the pointwise metrics
+(`voxel`, `edge`, `parity`, `symmetry`) with a reason and removes the pointwise keys of
+the others (coherence r(k), IoU, front-band RMSE, voxel calibration; listed under
+`_generative_dropped`), keeping everything that compares distributions: power ratios,
+bubble-size PDFs, histories, PDFs, morphology counts, EFT and the summary-statistic PITs.
+
+```bash
+eval21 run --data cubes.h5 --model gen=python:my_generator.py --draws 16 --mode generative \
+    --out results/gen --save-predictions results/predictions
+```
+
 ## Metrics
 
 Stage-resolved metrics bin LOS slices by the **truth** slice mean x_HI, so
@@ -197,6 +276,7 @@ truth and prediction are always paired. `active` is the last row: slices with
 | `cylindrical` | full cylindrical (k_perp, k_par) power ratio and coherence maps per sample, LOS chunks at ionization stages (default x̄_HI 0.9/0.7/0.5/0.3/0.1) or fixed z, share of resolved cells within ±0.1, native-resolution limits; drawn by `eval21 plot cyl` | `ebm21cm.native_cyl` (rhizome), `viz/power_spectrum_evaluation._cylindrical_sums` |
 | `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `eval21 plot gallery` / `deltas` | `ebm21cm.compare_cones3d`, `ebm21cm.delta_slices` (rhizome) |
 | `efficiency` | parameters, ms per lightcone (median/p16/p84), samples/s, slices/s, peak memory | `viz/inference_speed_eval.py` |
+| `ensemble` | with `--draws N`: CRPS, spread/skill, rank histogram and coverage (voxels), PIT calibration of x̄(z), history and Δ²(k) per stage, cosmic-variance comparison | — |
 | `symmetry` | RMS change under a transverse x↔y swap | `viz/visualize_3d.py` |
 
 ### Definitions worth stating
@@ -236,8 +316,68 @@ pooled as groups (e.g. redshift windows with one manifest each); a model must ex
 group. An x_HI and a T_b run of the same samples combine in the gallery.
 
 ```bash
+eval21 plot list                                   # every figure, its group and what it needs
 eval21 plot all --run results/ --out figs/ [--models ref,tuned] [--style style.json] [--title "LoReLi II test"]
+eval21 plot spectra maps --run results/ --out figs/ --opt frames=24      # groups or single figures
 ```
+
+Every figure is a function registered with `@figure(name, group=..., needs=...)` in
+`eval21/viz/` (a new figure is one decorated function). Figures marked *store* draw cube slices
+and need the prediction store written by `eval21 run --save-predictions DIR` (x_HI and T_b runs
+may share one DIR; `plot` finds `predictions/` next to the results or takes `--store`); without
+it they are skipped with that reason, as is any figure whose metric was not run. All figures are
+written as PNG and PDF. The fno-21cm and rhizome evaluation figures are ported with their
+original layout, colour maps and limits; figures of model internals (spectral weights,
+waveforms, gate mechanisms, training curves) are not part of an evaluation library.
+
+| group | figure | needs | content |
+|---|---|---|---|
+| bubbles | `bubble_size_distribution` | results | MFP bubble-size PDF per stage, truth vs models with 16-84% bands (fno-21cm bubble_size_evaluation) |
+| bubbles | `bubble_size_summary` | results | per-stage restricted Wasserstein distance and mean-MFP bias bars (fno-21cm bubble_size_evaluation) |
+| bubbles | `bsd_clean` | results | MFP bubble-size PDFs, central curves only, no bands (fno-21cm replot_bubble_size) |
+| bubbles | `bsd_clean_summary` | results | Wasserstein / mean-MFP bias bars with math stage labels (fno-21cm replot_bubble_size --summary) |
+| diagnostics | `parity_overlay` | results | binned parity plot E[pred x_HI | true x_HI] with 16-84% band and bin occupancy (fno-21cm parity_diagnostic) |
+| diagnostics | `parity_comparison` | store | hexbin of predicted vs true x_HI per model, log counts (fno-21cm compare_xhi2d_to_3d plot_parity) |
+| diagnostics | `boundary_band_overlay` | results | RMSE, mean x_HI (front width) and gradient error vs distance to the true front (fno-21cm boundary_band_diagnostic) |
+| ensemble | `ensemble_calibration` | results | rank histogram, PIT histograms, coverage vs nominal, spread/skill per stage |
+| ensemble | `ensemble_draws` | store | truth, ensemble mean/std and draws at the gallery stages, per stored sample |
+| maps | `gallery` | results | per-sample gallery: stages x (x_HI | T_b) truth / models / residuals |
+| maps | `deltas` | results | prediction - truth per stage, per sample, plus overview pages |
+| maps | `comparison_3d` | store | z-slice rows per sample: density | truth | prediction | pred - true per model |
+| maps | `lightcone_3d` | store | edge-on x-z lightcone strip at y = Ny/2: density, truth, prediction, pred - true |
+| maps | `scatter_3d` | store | voxel hexbin of truth vs prediction per sample, one panel per model, R^2 / RMSE |
+| maps | `lightcone_grid_3d` | store | one x-z strip row per sample (sorted by <x_HI> at z = 7): truth | prediction | pred - true |
+| maps | `multifield_slices` | store | transverse slices at the active redshifts: truth / predictions / pred - truth rows |
+| maps | `multifield_los` | store | line-of-sight (x, z) planes at several y, cropped to the active band (--opt full_z=1) |
+| maps | `multifield_strips` | store | stacked full-LOS lightcone strips per field: truth / predictions / errors per sample |
+| maps | `multifield_detailed` | store | per sample/field/model page: x-z slices, maps, error vs z, parity, histogram, P_perp, r(k) |
+| maps | `lightcone_animation` | store | GIF of transverse slices stepping through z, truth and each model (--opt frames=, animate_n=) |
+| maps | `slice_comparison` | store | 4 slices spread over all stored slices: density | truth | prediction | pred - true per model |
+| maps | `slice_scatter` | store | hexbin of truth vs prediction over 32 stored slices, one panel per model, R^2 / RMSE |
+| maps | `representative_z_slices` | store | slices at z quantiles (local-median mean): truth | predictions | errors with RMSE / MAE |
+| maps | `representative_z_compare` | store | truth and every model at z quantiles, plus the signed-error page |
+| maps | `ebm_examples` | store | rhizome examples: per model, rows of samples: delta | truth, draws, ensemble mean / std per field |
+| maps | `regression_examples` | store | rhizome regression_examples: rows of samples: log density | truth | prediction | error |
+| physical | `physical_history` | results | history error band, tau / Planck histogram, midpoint and duration (fno-21cm physical_history) |
+| physical | `physical_pdfs` | results | stage-resolved PDFs of x_HI and dT_b with W1 (fno-21cm physical_pdfs) |
+| physical | `physical_21cm` | results | 21-cm power, Delta^2 vs x_HI, dT_b moments, power-bias significance (fno-21cm physical_21cm) |
+| physical | `physical_eft` | results | EFT transfer, stochasticity, correlation and per-cone bias fits (fno-21cm physical_eft) |
+| physical | `physical_3d` | store | per-sample page: global field vs z, 3-D power, cross-correlation (fno-21cm physical_3d_*_cone*) |
+| physical | `rmse_r2` | results | RMSE / R^2 per x_HI stage: bars and per-slice distributions (fno-21cm rmse_r2_comparison/_distributions) |
+| physical | `params_vs_accuracy` | results | model size (parameters) vs R^2 and vs RMSE with Pareto front (fno-21cm params_vs_accuracy) |
+| physical | `inference_speed` | results | throughput vs RMSE and parameters vs throughput (fno-21cm inference_speed_vs_rmse/_vs_size) |
+| physical | `truth_sharpness_survey` | store | truth x_HI survey: voxel population, partial fraction, front width, TV vs slice x_HI (fno-21cm) |
+| spectra | `cyl` | results | cylindrical P_pred/P_true - 1 maps (white dead band), rows = models |
+| spectra | `ps_overlay` | results | active-stage Delta^2(k), P_pred/P_true and r(k) per model (fno-21cm ps_overlay) |
+| spectra | `ps_stage_curves` | results | per model: P_pred/P_true and r(k) per reionization stage (fno-21cm ps_stage_curves) |
+| spectra | `ps_cyl_ratio` | results | log2(P_pred/P_true) over (k_perp, k_par), rows = models (fno-21cm ps_cyl_ratio) |
+| spectra | `ps_cyl_r` | results | coherence r(k_perp, k_par), rows = models (fno-21cm ps_cyl_r) |
+| spectra | `cyl_anisotropy_decomposition` | results | cylindrical error split into k_par / k_perp marginals + advantage map (fno-21cm) |
+| spectra | `ps_coherence_highk` | results | coherence r(k) vs small-scale power fidelity, with the placement/amount plane (fno-21cm) |
+| spectra | `ps_plane3d` | results | small-scale coherence r(k>1) vs |P_pred/P_true - 1| (k>1), active stage (rhizome ps_plane3d) |
+| summary | `summary` | results | scorecard, per-sample RMSE, spectra, bubbles, history, fronts, EFT/morphology |
+
+The original quick-reference for the first four:
 
 | kind | files | content |
 |---|---|---|

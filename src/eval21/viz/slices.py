@@ -153,6 +153,7 @@ def plot_deltas(cat, out: Path, field="xhi", ids=None, quiet=False):
         cax = fig.add_axes((0.88, 0.25, 0.015, 0.5))
         fig.colorbar(im, cax=cax).set_label(cbar, fontsize=8)
         fig.savefig(path, dpi=130)
+        fig.savefig(Path(path).with_suffix(".pdf"))          # png + pdf like every eval21 figure
         plt.close(fig)
         if not quiet:
             print("wrote", path)
