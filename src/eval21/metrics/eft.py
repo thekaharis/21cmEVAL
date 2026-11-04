@@ -251,6 +251,20 @@ class EftMetrics(Metric):
                         if row["stages"][j] is not None]
                 if rows:
                     out[f"eft_{key}_{token}"] = np.stack(rows)
+        # Per-sample fit coefficients (n_samples, n_rows, 2), NaN for thin stages: the
+        # truth-vs-prediction scatter of ``eval21 plot physical`` (fno-21cm layout).
+        for name, key, part in (("bias_truth", "transfer_fit_truth", "coef"),
+                                ("bias_pred", "transfer_fit_pred", "coef"),
+                                ("bias_sigma_truth", "transfer_fit_truth", "sigma"),
+                                ("stoch_truth", "eps_fit_truth", "coef"),
+                                ("stoch_pred", "eps_fit_pred", "coef"),
+                                ("stoch_sigma_truth", "eps_fit_truth", "sigma")):
+            values = np.full((len(self.rows), len(labels), 2), np.nan)
+            for i, row in enumerate(self.rows):
+                for j, stage in enumerate(row["stages"]):
+                    if stage is not None:
+                        values[i, j] = np.asarray(stage[key][part], dtype=np.float64)[:2]
+            out[f"eft_fit_{name}"] = values
         return out
 
 

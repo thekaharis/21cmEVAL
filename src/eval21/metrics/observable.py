@@ -92,6 +92,13 @@ class ObservableMetrics(Metric):
                         for t in self.settings.k_targets]
 
         stages = []
+        # fno-21cm physical_evaluation semantics, for ``eval21 plot physical``:
+        # histograms over every slice of a stage (thin stages included, as the
+        # pooled PDFs there), significance averaged (not median) over slices.
+        suite = _suite_stage_arrays(masks, truth, pred, dtb_truth, dtb_pred, self.xhi_edges,
+                                    self.dtb_edges, power_t, power_p, power_dt, power_dp,
+                                    counts, self.settings.min_stage_slices,
+                                    self.settings.partial_range)
         for mask in masks:
             n = int(mask.sum())
             if n < self.settings.min_stage_slices:
@@ -145,6 +152,7 @@ class ObservableMetrics(Metric):
             })
         self.rows.append({
             "sample": sample.id,
+            "suite": suite,
             "stages": stages,
             "target_index": target_index,
             "xbar_truth": xbar_truth,
@@ -291,7 +299,72 @@ class ObservableMetrics(Metric):
             [r["xbar_truth"] for r in self.rows])
         out["observable_xbar_pred"] = np.stack(
             [r["xbar_pred"] for r in self.rows])
+        out.update(_suite_arrays(self.rows, labels, self._binner[1].centers, self.settings))
         return out
+
+
+def _suite_stage_arrays(masks, truth, pred, dtb_truth, dtb_pred, xhi_edges, dtb_edges,
+                        power_t, power_p, power_dt, power_dp, counts, min_slices,
+                        partial_range=(0.1, 0.9)):
+    """Per-stage arrays of one sample with fno-21cm ``physical_evaluation`` semantics."""
+    n_rows, nk = len(masks), len(counts)
+    out = {"hist": {}, "w1_xhi": np.full(n_rows, np.nan), "w1_dtb": np.full(n_rows, np.nan),
+           "partial_truth": np.full(n_rows, np.nan), "partial_pred": np.full(n_rows, np.nan),
+           "sigmean_xhi": np.full((n_rows, nk), np.nan), "sigmean_dtb": np.full((n_rows, nk), np.nan),
+           "d2_truth": np.full((n_rows, nk), np.nan), "d2_pred": np.full((n_rows, nk), np.nan),
+           "n_slices": np.array([int(m.sum()) for m in masks])}
+    fields = {"xhi_truth": (truth, xhi_edges), "xhi_pred": (pred, xhi_edges),
+              "dtb_truth": (dtb_truth, dtb_edges), "dtb_pred": (dtb_pred, dtb_edges)}
+    for key, (field, edges) in fields.items():
+        out["hist"][key] = np.stack([
+            np.histogram(np.clip(field[:, :, m].ravel(), edges[0], edges[-1]), bins=edges)[0]
+            for m in masks]).astype(np.float64)
+    lo, hi = partial_range
+    for j, mask in enumerate(masks):
+        n = int(mask.sum())
+        if n < min_slices:
+            continue
+        h = out["hist"]
+        out["w1_xhi"][j] = histogram_w1(h["xhi_truth"][j], h["xhi_pred"][j], xhi_edges)
+        out["w1_dtb"][j] = histogram_w1(h["dtb_truth"][j], h["dtb_pred"][j], dtb_edges)
+        out["partial_truth"][j] = np.mean((truth[:, :, mask] > lo) & (truth[:, :, mask] < hi))
+        out["partial_pred"][j] = np.mean((pred[:, :, mask] > lo) & (pred[:, :, mask] < hi))
+        out["sigmean_xhi"][j] = _significance_mean(power_t[mask], power_p[mask], counts)
+        out["sigmean_dtb"][j] = _significance_mean(power_dt[mask], power_dp[mask], counts)
+    return out
+
+
+def _significance_mean(sum_truth, sum_pred, counts):
+    with np.errstate(invalid="ignore", divide="ignore"):
+        sigma = sum_truth * np.sqrt(2.0 / counts)[None, :]
+        values = (sum_pred - sum_truth) / sigma
+    values[~(sum_truth > 0) | ~np.isfinite(values)] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmean(values, axis=0)
+
+
+def _suite_arrays(rows, labels, k, settings):
+    """Stacked per-sample arrays for ``eval21 plot physical`` (fno-21cm layout)."""
+    suite = [r["suite"] for r in rows if "suite" in r]
+    if not suite:
+        return {}
+    out = {"observable_k": np.asarray(k),
+           "observable_n_slices": np.stack([s["n_slices"] for s in suite])}
+    for key in ("xhi_truth", "xhi_pred", "dtb_truth", "dtb_pred"):
+        out[f"observable_counts_{key}"] = np.sum([s["hist"][key] for s in suite], axis=0)
+    for key in ("w1_xhi", "w1_dtb", "partial_truth", "partial_pred", "sigmean_xhi", "sigmean_dtb"):
+        out[f"observable_{key}"] = np.stack([s[key] for s in suite])
+    d2t = np.full((len(rows), len(labels), len(k)), np.nan)
+    d2p = np.full_like(d2t, np.nan)
+    for i, row in enumerate(rows):
+        for j, stage in enumerate(row["stages"]):
+            if stage is not None:
+                d2t[i, j], d2p[i, j] = stage["d2_truth"], stage["d2_pred"]
+    out["observable_d2_dtb_truth"] = d2t
+    out["observable_d2_dtb_pred"] = d2p
+    out["observable_sample_ids"] = np.array([str(r["sample"]) for r in rows])
+    return out
 
 
 def _gather_reduced(rows, key, n_rows):
