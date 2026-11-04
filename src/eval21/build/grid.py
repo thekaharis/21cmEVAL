@@ -77,7 +77,8 @@ class LosInterpolator:
         zs = source_z[order]
         i = np.clip(np.searchsorted(zs, target_z) - 1, 0, len(zs) - 2)
         w = (target_z - zs[i]) / np.maximum(zs[i + 1] - zs[i], 1e-300)
-        self.inside = (target_z >= zs[0] - 1e-9) & (target_z <= zs[-1] + 1e-9)
+        tol = 1e-6 * (1.0 + np.abs(target_z))          # float32-rounding of stored redshifts
+        self.inside = (target_z >= zs[0] - tol) & (target_z <= zs[-1] + tol)
         self.i, self.w = i, np.clip(w, 0.0, 1.0)
 
     def __call__(self, cube: np.ndarray) -> np.ndarray:

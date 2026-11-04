@@ -104,7 +104,9 @@ class Fast21cmSource(Source):
 
         with h5py.File(item.path, "r") as handle:
             lc = handle["lightcone"]
-            z = np.asarray(lc["lightcone_redshifts"], dtype=np.float64)
+            # float32 like fno-21cm's LightconeFile.los_redshifts, so a build on the same grid
+            # reproduces its cube caches exactly (the float64 values differ in the 7th digit)
+            z = np.asarray(lc["lightcone_redshifts"], dtype=np.float32).astype(np.float64)
             out = {}
             for name in fields:
                 key = self.aliases.get(name, name)
