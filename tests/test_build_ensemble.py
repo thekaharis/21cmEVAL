@@ -197,3 +197,19 @@ def test_target_specific_metrics_skip_tb(tmp_path):
             return {"tb": s.targets["tb"] * 0.9}
     result = evaluate(Copy(), ds, Settings(target="tb", rays_per_slice=8), ["history", "bubble", "voxel"])
     assert "history" in result.skipped and "bubble" in result.skipped and "voxel" in result.metrics
+
+
+def test_cli_target_reaches_the_metrics(tmp_path):
+    from eval21.cli import main
+
+    _write_21cmfast(tmp_path / "sims", n=2)
+    build(tmp_path / "sims", tmp_path / "c.h5", fields=["density", "xhi", "tb"],
+          z_grid="uniform:6,11,16", quiet=True)
+    model = tmp_path / "m.py"
+    model.write_text("def predict(s):\n    return {'tb': s.targets['tb'] * 0.5, 'xhi': s.targets['xhi']}\n")
+    main(["run", "--data", str(tmp_path / "c.h5"), "--target", "tb", "--model", f"m=python:{model}",
+          "--metrics", "voxel", "--out", str(tmp_path / "r"), "--quiet"])
+    r = json.loads((tmp_path / "r" / "results.json").read_text())
+    assert r["settings"]["target"] == "tb"
+    voxel = r["models"]["m"]["metrics"]["voxel"]
+    assert voxel["truth_mean"] > 1.0 and voxel["rmse"] > 0     # scored T_b [mK], not x_HI

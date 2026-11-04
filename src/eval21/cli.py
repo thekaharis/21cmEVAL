@@ -212,6 +212,13 @@ def _run(args) -> int:
         value = getattr(args, key, None)
         if value is not None:
             settings_values[key] = value
+    # --target/--density pick the data field, the adapter output and what the metrics score:
+    # one value for all three (an explicit --set target=... wins)
+    for key, value in (("target", target), ("density", density)):
+        if key in settings_values and settings_values[key] != value and getattr(args, key, None) is not None:
+            raise SystemExit(f"--{key} {value} conflicts with --set {key}={settings_values[key]}")
+        settings_values.setdefault(key, value)
+    target, density = settings_values["target"], settings_values["density"]
     settings = Settings.from_dict(settings_values)
 
     metrics_section = config.get("metrics", {})
