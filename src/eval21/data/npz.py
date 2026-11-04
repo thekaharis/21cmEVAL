@@ -148,7 +148,9 @@ class NpzDataset(BaseDataset):
         return Sample(
             id=context.get("id", path.stem),
             inputs=inputs,
-            targets={target_name: target},
+            # keyed by the field name metrics and adapters use (``--target``), not by the array's
+            # name in the file: a manifest may point ``target`` at e.g. ``truth`` / ``tb_truth``
+            targets={self.target: target},
             meta=Meta(
                 box_mpc=None if box is None else float(box),
                 z_grid=None if z_grid is None else np.asarray(z_grid, dtype=np.float64),

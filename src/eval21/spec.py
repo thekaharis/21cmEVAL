@@ -99,7 +99,8 @@ def check_prediction(prediction, sample: Sample, names=None) -> None:
                 f"adapter returned {sorted(prediction)}"
             )
         array = np.asarray(prediction[name])
-        expected = np.asarray(sample.targets.get(name, sample.shape)).shape
+        expected = (np.shape(sample.targets[name]) if name in sample.targets
+                    else tuple(sample.shape))
         if array.shape != expected:
             raise ValueError(
                 f"prediction {name!r} for sample {sample.id!r} has shape "
