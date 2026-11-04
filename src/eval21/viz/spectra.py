@@ -1,4 +1,4 @@
-"""Power-spectrum figures: transverse P(k) per stage, cylindrical ratio / coherence maps,
+"""Power-spectrum figures: transverse P(k) per stage, cylindrical coherence maps,
 coherence vs small-scale power planes.
 
 Ports of fno-21cm's ``viz/power_spectrum_evaluation.py``, ``viz/ps_coherence_highk.py`` and
@@ -16,9 +16,6 @@ ps_overlay                    power_spectrum_evaluation.plot_overlay           a
                                                                                coherence r(k_perp) (label: k where r < 0.9)
 ps_stage_curves               power_spectrum_evaluation.plot_stage_curves      per model (rows): ratio(k) and r(k) per          curves
                               (``ps_stage_curves.png``)                        reionization stage (viridis)
-ps_cyl_ratio                  power_spectrum_evaluation.plot_cylindrical_maps  log2(P_pred/P_true) over (k_perp, k_par),         curves
-                              (``ps_cyl_ratio.png``)                           rows = models, columns = LOS chunks; RdBu_r,
-                                                                               symmetric robust limit (98th pct, >= 0.1)
 ps_cyl_r                      power_spectrum_evaluation.plot_cylindrical_maps  coherence r(k_perp, k_par), viridis,             curves
                               (``ps_cyl_r.png``)                               vmin = min(0.9, 2nd pct), vmax = 1
 cyl_anisotropy_decomposition  cyl_anisotropy_decomposition.main                amplitude |log10 ratio| and decoherence 1 - r:   curves
@@ -447,12 +444,12 @@ def _cyl_or_skip(ctx, target):
     return data
 
 
-def _plot_cyl(ctx, kind):
-    """ps_cyl_ratio (kind='ratio') / ps_cyl_r (kind='r'): rows = models, columns = chunks."""
+@figure("ps_cyl_r", group="spectra",
+        help="coherence r(k_perp, k_par), rows = models (fno-21cm ps_cyl_r)")
+def ps_cyl_r(ctx):
+    """Coherence r(k_perp, k_par): rows = models, columns = chunks (power errors: the `cyl` figure)."""
     cat = ctx.catalog
     plt = pyplot()
-    from matplotlib.colors import TwoSlopeNorm
-
     written, reasons = [], []
     for target in cat.targets:
         data = _cyl_or_skip(ctx, target)
@@ -460,44 +457,24 @@ def _plot_cyl(ctx, kind):
             reasons.append(f"{target}: no cylindrical/anisotropy maps")
             continue
         cols = data["columns"]
-        models = cat.models
-        if kind == "r":
-            models = [m for m in cat.models if all(c["r"][m] is not None for c in cols)]
-            if not models:
-                reasons.append(f"{target}: no coherence maps ({data['source']} source or generative runs)")
-                continue
-            vals = np.concatenate([c["r"][m][np.isfinite(c["r"][m])] for c in cols for m in models])
-            if not vals.size:
-                reasons.append(f"{target}: coherence maps are empty")
-                continue
-            cmap = plt.get_cmap("viridis").with_extremes(bad="0.85")
-            style = {"cmap": cmap, "vmin": min(0.9, float(np.percentile(vals, 2))), "vmax": 1.0}
-            label = r"$r(k_\perp, k_\parallel)$"
-            transform = None
-        else:
-            vals = np.concatenate([np.log2(c["ratio"][m][np.isfinite(c["ratio"][m]) & (c["ratio"][m] > 0)])
-                                   for c in cols for m in models])
-            if not vals.size:
-                reasons.append(f"{target}: ratio maps are empty")
-                continue
-            lim = max(0.1, float(np.percentile(np.abs(vals), 98)))
-            cmap = plt.get_cmap("RdBu_r").with_extremes(bad="0.85")
-            style = {"cmap": cmap, "norm": TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)}
-            label = r"$\log_2(P_{\rm pred}/P_{\rm true})$"
-
-            def transform(a):
-                with np.errstate(all="ignore"):
-                    return np.log2(np.where(a > 0, a, np.nan))
+        models = [m for m in cat.models if all(c["r"][m] is not None for c in cols)]
+        if not models:
+            reasons.append(f"{target}: no coherence maps ({data['source']} source or generative runs)")
+            continue
+        vals = np.concatenate([c["r"][m][np.isfinite(c["r"][m])] for c in cols for m in models])
+        if not vals.size:
+            reasons.append(f"{target}: coherence maps are empty")
+            continue
+        cmap = plt.get_cmap("viridis").with_extremes(bad="0.85")
+        vmin = min(0.9, float(np.percentile(vals, 2)))
         n_col = len(cols)
         fig, axes = plt.subplots(len(models), n_col, figsize=(4.0 * n_col + 0.6, 3.5 * len(models) + 0.4),
                                  squeeze=False)
         for row, m in enumerate(models):
             for col, c in enumerate(cols):
                 ax = axes[row][col]
-                raw = c[kind][m]
-                if transform is not None:
-                    raw = transform(raw)
-                pcm = ax.pcolormesh(data["kperp_edges"], c["kpar_edges"], np.ma.masked_invalid(raw), **style)
+                pcm = ax.pcolormesh(data["kperp_edges"], c["kpar_edges"], np.ma.masked_invalid(c["r"][m]),
+                                    cmap=cmap, vmin=vmin, vmax=1.0)
                 ax.set_xscale("log")
                 ax.set_yscale("log")
                 ax.set_box_aspect(1)                      # square (k_perp, k_par) panels
@@ -506,26 +483,12 @@ def _plot_cyl(ctx, kind):
                 ax.set_ylabel(f"{wrap_label(cat.label(m), 24)}\n{K_PAR}" if col == 0 else K_PAR)
                 if row == 0:
                     ax.set_title(c["title"])
-                fig.colorbar(pcm, ax=ax, pad=0.02, label=label, shrink=0.85)
+                fig.colorbar(pcm, ax=ax, pad=0.02, label=r"$r(k_\perp, k_\parallel)$", shrink=0.85)
         fig.tight_layout()
-        name = "ps_cyl_ratio" if kind == "ratio" else "ps_cyl_r"
-        written.append(save(fig, ctx.out, f"{name}_{target}", dpi=DPI, quiet=ctx.quiet))
+        written.append(save(fig, ctx.out, f"ps_cyl_r_{target}", dpi=DPI, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("; ".join(reasons) or "no cylindrical results")
     return written
-
-
-@figure("ps_cyl_ratio", group="spectra", default=False,
-        help="log2(P_pred/P_true) over (k_perp, k_par), rows = models (fno-21cm ps_cyl_ratio); "
-             "only on request, `cyl` is the standard cylindrical figure")
-def ps_cyl_ratio(ctx):
-    return _plot_cyl(ctx, "ratio")
-
-
-@figure("ps_cyl_r", group="spectra",
-        help="coherence r(k_perp, k_par), rows = models (fno-21cm ps_cyl_r)")
-def ps_cyl_r(ctx):
-    return _plot_cyl(ctx, "r")
 
 
 # --------------------------------------------------------------------------------------------- #

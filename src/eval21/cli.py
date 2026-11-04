@@ -304,8 +304,7 @@ def _plot(args) -> int:
             print(f"[{group}]")
             for f in figures.values():
                 if f.group == group:
-                    print(f"  {f.name:28s} {'(stored cubes) ' if 'store' in f.needs else ''}"
-                          f"{'' if f.default else '(only by name) '}{f.help}")
+                    print(f"  {f.name:28s} {'(stored cubes) ' if 'store' in f.needs else ''}{f.help}")
         return 0
     if not args.run or args.out is None:
         raise SystemExit("eval21 plot: --run and --out are required")

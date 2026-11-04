@@ -31,7 +31,6 @@ class Figure:
     group: str = "misc"
     needs: tuple = ("curves",)
     help: str = ""
-    default: bool = True          # False: drawn only when named explicitly (not by `all` or its group)
 
 
 @dataclass
@@ -54,12 +53,11 @@ class PlotContext:
 _FIGURES: dict[str, Figure] = {}
 
 
-def figure(name: str, group: str = "misc", needs=("curves",), help: str = "", default: bool = True):
+def figure(name: str, group: str = "misc", needs=("curves",), help: str = ""):
     def decorator(func):
         if name in _FIGURES:
             raise ValueError(f"figure {name!r} is already registered")
-        _FIGURES[name] = Figure(name, func, group, tuple(needs), help or (func.__doc__ or "").strip().split("\n")[0],
-                                default)
+        _FIGURES[name] = Figure(name, func, group, tuple(needs), help or (func.__doc__ or "").strip().split("\n")[0])
         return func
     return decorator
 
@@ -75,18 +73,15 @@ def load_all() -> dict[str, Figure]:
 
 
 def run(names, ctx: PlotContext) -> dict:
-    """Run the named figures (``all``: every default one). Returns {name: written | reason}.
-
-    Figures registered with ``default=False`` run only when named themselves.
-    """
+    """Run the named figures (``all``: every registered one). Returns {name: written | reason}."""
     figures = load_all()
     if not names or "all" in names:
-        selected = [n for n, f in figures.items() if f.default]
+        selected = list(figures)
     else:
         unknown = [n for n in names if n not in figures and n not in {f.group for f in figures.values()}]
         if unknown:
             raise SystemExit(f"unknown figure(s) {unknown}; see `eval21 plot list`")
-        selected = [n for n in figures if n in names or (figures[n].group in names and figures[n].default)]
+        selected = [n for n in figures if n in names or figures[n].group in names]
     done = {}
     explicit = names and "all" not in names
     for name in selected:

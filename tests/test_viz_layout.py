@@ -92,9 +92,9 @@ def test_cyl_maps_square(viz_fixture, tmp_path, monkeypatch):
     figures = registry.load_all()
     for module in (spectra, cylindrical):
         monkeypatch.setattr(module, "save", grab)
-    for name in ("ps_cyl_ratio", "cyl"):
+    for name in ("ps_cyl_r", "cyl"):
         figures[name].func(ctx)
-    assert any(name.startswith("ps_cyl_ratio") for name in shapes)
+    assert any(name.startswith("ps_cyl_r") for name in shapes)
     assert any(name.startswith("cyl_error") for name in shapes)
     for name, boxes in shapes.items():
         assert boxes, name

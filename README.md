@@ -370,7 +370,6 @@ waveforms, gate mechanisms, training curves) are not part of an evaluation libra
 | spectra | `cyl` | results | cylindrical P_pred/P_true - 1 maps (white dead band), rows = models |
 | spectra | `ps_overlay` | results | active-stage Delta^2(k), P_pred/P_true and r(k) per model (fno-21cm ps_overlay) |
 | spectra | `ps_stage_curves` | results | per model: P_pred/P_true and r(k) per reionization stage (fno-21cm ps_stage_curves) |
-| spectra | `ps_cyl_ratio` | results | log2(P_pred/P_true) over (k_perp, k_par), rows = models (fno-21cm ps_cyl_ratio). Only when named: `cyl` (linear P_pred/P_true − 1, white ±0.1 band) is the standard cylindrical figure |
 | spectra | `ps_cyl_r` | results | coherence r(k_perp, k_par), rows = models (fno-21cm ps_cyl_r) |
 | spectra | `cyl_anisotropy_decomposition` | results | cylindrical error split into k_par / k_perp marginals + advantage map (fno-21cm) |
 | spectra | `ps_coherence_highk` | results | coherence r(k) vs small-scale power fidelity, with the placement/amount plane (fno-21cm) |

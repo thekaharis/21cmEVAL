@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-FIGURES = ("ps_overlay", "ps_stage_curves", "ps_cyl_ratio", "ps_cyl_r", "cyl_anisotropy_decomposition",
+FIGURES = ("ps_overlay", "ps_stage_curves", "ps_cyl_r", "cyl_anisotropy_decomposition",
            "ps_coherence_highk", "ps_plane3d")
 
 def _ctx(tmp_path, runs, options=None, models=None):
@@ -31,15 +31,6 @@ def test_spectra_figures_on_fixture(tmp_path, viz_fixture):
         assert (tmp_path / f"{name}_xhi.csv").read_text().count("\n") >= 3
 
 
-def test_log_cyl_ratio_only_by_name(tmp_path, viz_fixture):
-    pytest.importorskip("matplotlib")
-    from eval21.viz import run
-
-    done = run(["spectra"], _ctx(tmp_path, [viz_fixture / "results"]))
-    assert "ps_cyl_ratio" not in done and "cyl" in done          # the linear map is the standard one
-    assert not (tmp_path / "ps_cyl_ratio_tb.png").exists()
-
-
 def test_spectra_options_and_anisotropy_source(tmp_path, viz_fixture):
     FIXTURE = viz_fixture
     pytest.importorskip("matplotlib")
@@ -47,8 +38,8 @@ def test_spectra_options_and_anisotropy_source(tmp_path, viz_fixture):
 
     ctx = _ctx(tmp_path, [FIXTURE / "results" / "sharp" / "xhi", FIXTURE / "results" / "blurry" / "xhi"],
                options={"cyl_source": "anisotropy", "model": "blurry", "zbin": 0})
-    done = run(["ps_cyl_ratio", "ps_cyl_r", "cyl_anisotropy_decomposition"], ctx)
-    assert (tmp_path / "ps_cyl_ratio_xhi.png").exists()
+    done = run(["ps_cyl_r", "cyl_anisotropy_decomposition"], ctx)
+    assert (tmp_path / "cyl_anisotropy_decomposition_xhi.png").exists()
     assert isinstance(done["ps_cyl_r"], str) and "skipped" in done["ps_cyl_r"]   # no coherence maps
     rows = (tmp_path / "cyl_anisotropy_decomposition_xhi.csv").read_text().splitlines()
     assert rows[1].startswith("amplitude,blurry,sharp,z ≈ ")
