@@ -52,7 +52,7 @@ class DtbMetrics(Metric):
         return self._binner[1]
 
     def update(self, sample, prediction, aux=None, runtime=None):
-        xhi = true_xhi(sample, self.settings.target)
+        xhi = true_xhi(sample, self.settings.target, self.settings.stage_field)
         if xhi is None or self.settings.target == "xhi":     # needs a T_b target staged by x_HI
             self.skipped += 1
             return

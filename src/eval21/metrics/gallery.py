@@ -33,7 +33,7 @@ class GalleryMetric(Metric):
     def update(self, sample, prediction, aux=None, runtime=None):
         if not self._wanted(sample):
             return
-        xhi = true_xhi(sample, self.settings.target)
+        xhi = true_xhi(sample, self.settings.target, self.settings.stage_field)
         nz = sample.shape[2]
         if xhi is not None:
             xbar = xhi.mean(axis=(0, 1))

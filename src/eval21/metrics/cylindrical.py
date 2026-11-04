@@ -52,12 +52,14 @@ from .base import Metric, finite_or_none
 STAGE_TOL, STAGE_SHIFT_TOL, MIN_TRUTH_STD, UNIFORM_TOL = 0.05, 0.1, 1e-3, 2e-3
 
 
-def true_xhi(sample, target: str):
-    """True x_HI cube of a sample (target or input ``xhi``), or None."""
-    for source in (sample.targets, sample.inputs):
-        value = source.get("xhi")
-        if value is not None and np.ndim(value) == 3:
-            return np.asarray(value, dtype=np.float64)
+def true_xhi(sample, target: str, stage_field: str = "xhi"):
+    """True x_HI cube of a sample, or None: the target or input named ``stage_field``
+    (``Settings.stage_field``, e.g. ``truth`` in eval_cubes manifests), else one named ``xhi``."""
+    for name in dict.fromkeys((stage_field or "xhi", "xhi")):
+        for source in (sample.targets, sample.inputs):
+            value = source.get(name)
+            if value is not None and np.ndim(value) == 3:
+                return np.asarray(value, dtype=np.float64)
     return None
 
 
@@ -180,9 +182,9 @@ class CylindricalMetrics(Metric):
         cell_los = float(spacing.mean()) if self._uniform else cell
         binner = self._setup(nx, ny, box, cell_los)
 
-        xhi = true_xhi(sample, self.settings.target)
+        xhi = true_xhi(sample, self.settings.target, self.settings.stage_field)
         if self.mode == "stage" and xhi is None:
-            raise ValueError("cylindrical: stage chunks need the true x_HI (an 'xhi' target or input); "
+            raise ValueError("cylindrical: stage chunks need the true x_HI (an 'xhi' / stage_field target or input); "
                              "set cyl_z_centers for fixed-redshift chunks")
         xbar = None if xhi is None else xhi.mean(axis=(0, 1))
         if self.mode == "z" and z_sorted is None:
