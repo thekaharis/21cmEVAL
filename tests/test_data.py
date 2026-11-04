@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from cm21eval.data import NpzDataset, SyntheticDataset, open_data
+from eval21.data import NpzDataset, SyntheticDataset, open_data
 
 
 def write_cube(path, shape=(12, 12, 6), seed=0, with_density=True, with_z=True):
@@ -95,7 +95,7 @@ def test_synthetic_history_is_monotone():
 
 
 def test_sample_rejects_non_3d():
-    from cm21eval.spec import Sample
+    from eval21.spec import Sample
 
     with pytest.raises(ValueError, match="3-D"):
         Sample(id="bad", inputs={}, targets={"xhi": np.zeros((4, 4))})

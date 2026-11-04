@@ -1,6 +1,6 @@
 """Minimal custom model for 21cmEVAL.
 
-    cm21eval run --data demo/data --model toy=python:examples/toy_model.py \
+    eval21 run --data demo/data --model toy=python:examples/toy_model.py \
         --out results/toy
 
 The only requirement is ``predict(sample) -> {name: array}``. ``describe()``

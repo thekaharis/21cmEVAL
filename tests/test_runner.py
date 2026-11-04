@@ -4,13 +4,13 @@ import json
 import numpy as np
 import pytest
 
-from cm21eval import registry, report
-from cm21eval.adapters.toy import SmoothThresholdModel
-from cm21eval.cli import main
-from cm21eval.data import SyntheticDataset
-from cm21eval.runner import evaluate
-from cm21eval.settings import Settings
-from cm21eval.spec import Meta, Sample
+from eval21 import registry, report
+from eval21.adapters.toy import SmoothThresholdModel
+from eval21.cli import main
+from eval21.data import SyntheticDataset
+from eval21.runner import evaluate
+from eval21.settings import Settings
+from eval21.spec import Meta, Sample
 
 SMALL = Settings(box_mpc=100.0, n_k_bins=8, rays_per_slice=24,
                  slices_per_stage=2, bubble_bins=8, eft_k_max=0.5)
@@ -107,7 +107,7 @@ def test_report_files(tmp_path):
     # Strict JSON: no NaN/Infinity leaking into the report.
     loaded = json.loads((tmp_path / "results.json").read_text(),
                         parse_constant=lambda value: pytest.fail(value))
-    assert loaded["schema"] == "cm21eval/1"
+    assert loaded["schema"] == "eval21/1"
     assert loaded["models"]["toy"]["metrics"]["voxel"]["rmse"] > 0
     assert payload["models"]["toy"]["n_samples"] == 1
 
@@ -151,7 +151,7 @@ def test_expect_shape_is_enforced():
 def test_resolve_expect_shape():
     from types import SimpleNamespace
 
-    from cm21eval.cli import _resolve_expect_shape
+    from eval21.cli import _resolve_expect_shape
 
     info = {"shape": [140, 140, 256]}
     assert _resolve_expect_shape(
@@ -232,7 +232,7 @@ def test_cli_indices_json_uses_cone_ids(tmp_path):
 
 
 def test_cli_run_with_config(tmp_path):
-    from cm21eval.data.synthetic import write_demo
+    from eval21.data.synthetic import write_demo
 
     manifest = write_demo(tmp_path / "data", n_samples=1, shape=(16, 16, 8))
     config = tmp_path / "eval.toml"

@@ -13,8 +13,8 @@ checkpoints. Metrics are numpy-only, streaming accumulators, so a 200-cone
 sweep costs one forward pass and constant memory.
 
 ```
-cm21eval demo --out demo          # synthetic data + toy model, ~10 s
-cm21eval selftest                 # analytic checks, no data needed
+eval21 demo --out demo          # synthetic data + toy model, ~10 s
+eval21 selftest                 # analytic checks, no data needed
 ```
 
 ## Install
@@ -30,10 +30,10 @@ Python 3.10+.
 
 ```bash
 # 1. Score a toy model on generated data
-cm21eval demo --out demo
+eval21 demo --out demo
 
 # 2. Score an fno-21cm run on its own cube cache
-cm21eval run \
+eval21 run \
     --data /work/data/compressed/cubes_3d.h5 \
     --indices-json /work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/run_metadata.json \
     --model fno=fno21cm:/work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/best_model_state_dict.pt \
@@ -42,7 +42,7 @@ cm21eval run \
     --limit 200 --out results/fno
 
 # 3. Compare several models in one pass over the data
-cm21eval run --data cubes/ \
+eval21 run --data cubes/ \
     --model fno=fno21cm:.../best_model_state_dict.pt \
     --model ufno=fno21cm:.../best_model_state_dict.pt \
     --fno-root /work/fno-21cm \
@@ -54,7 +54,7 @@ cm21eval run --data cubes/ \
 
 | file | content |
 |---|---|
-| `results.json` | complete report, schema `cm21eval/1`, all nested metrics |
+| `results.json` | complete report, schema `eval21/1`, all nested metrics |
 | `summary.csv` | every top-level scalar leaf as one column, one row per model |
 | `stages.csv` | long-form stage/chunk table: model, metric, group, stage, key, value |
 | `report.md` | headline table plus per-stage tables |
@@ -104,7 +104,7 @@ With a manifest (paths relative to it):
 `--data cubes_3d.h5` auto-detects the fno-21cm layout: `x` `(N, C, Nx, Ny,
 Nz)` + `y`, or `density` + `neutral_fraction` + `target_z` + `params`.
 For a different layout construct `Hdf5Dataset` directly with explicit keys —
-`cm21eval.data.hdf5` documents every argument.
+`eval21.data.hdf5` documents every argument.
 
 The HDF5 loader indexes ids/parameters/geometry once and reads one cube per
 iteration; it never materialises the cache. A 6600-cone `cubes_3d.h5` is about
@@ -194,8 +194,8 @@ truth and prediction are always paired. `active` is the last row: slices with
 | `parity` | conditional bias E[pred\|true] − true per truth bin, per-bin spread and RMSE, partial-range RMSE | `viz/parity_diagnostic.py` |
 | `radial` | isotropic 3-D P(k) ratio and coherence (cross-check; non-periodic LOS) | `util/metrics_21cm.py` |
 | `anisotropy` | cylindrical (k_perp, k_par) power ratio and coherence at z = 7/9/11 | `viz/power_spectrum_evaluation.py` |
-| `cylindrical` | full cylindrical (k_perp, k_par) power ratio and coherence maps per sample, LOS chunks at ionization stages (default x̄_HI 0.9/0.7/0.5/0.3/0.1) or fixed z, share of resolved cells within ±0.1, native-resolution limits; drawn by `cm21eval plot cyl` | `ebm21cm.native_cyl` (rhizome), `viz/power_spectrum_evaluation._cylindrical_sums` |
-| `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `cm21eval plot gallery` / `deltas` | `ebm21cm.compare_cones3d`, `ebm21cm.delta_slices` (rhizome) |
+| `cylindrical` | full cylindrical (k_perp, k_par) power ratio and coherence maps per sample, LOS chunks at ionization stages (default x̄_HI 0.9/0.7/0.5/0.3/0.1) or fixed z, share of resolved cells within ±0.1, native-resolution limits; drawn by `eval21 plot cyl` | `ebm21cm.native_cyl` (rhizome), `viz/power_spectrum_evaluation._cylindrical_sums` |
+| `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `eval21 plot gallery` / `deltas` | `ebm21cm.compare_cones3d`, `ebm21cm.delta_slices` (rhizome) |
 | `efficiency` | parameters, ms per lightcone (median/p16/p84), samples/s, slices/s, peak memory | `viz/inference_speed_eval.py` |
 | `symmetry` | RMS change under a transverse x↔y swap | `viz/visualize_3d.py` |
 
@@ -229,14 +229,14 @@ truth and prediction are always paired. `active` is the last row: slices with
 
 ## Figures
 
-`cm21eval plot` (needs `matplotlib`, `pip install -e ".[viz]"`) draws figures from one or more
+`eval21 plot` (needs `matplotlib`, `pip install -e ".[viz]"`) draws figures from one or more
 result directories. A directory without `results.json` is searched recursively, so a tree of runs
 (`<model>/<group>/<target>/`) can be passed whole. Runs of the same target on different data are
 pooled as groups (e.g. redshift windows with one manifest each); a model must exist in every
 group. An x_HI and a T_b run of the same samples combine in the gallery.
 
 ```bash
-cm21eval plot all --run results/ --out figs/ [--models ref,tuned] [--style style.json] [--title "LoReLi II test"]
+eval21 plot all --run results/ --out figs/ [--models ref,tuned] [--style style.json] [--title "LoReLi II test"]
 ```
 
 | kind | files | content |
@@ -286,13 +286,13 @@ n_k_bins = 20
 ```
 
 CLI flags override the file. `--set key=value` overrides one setting.
-`cm21eval list-metrics` prints the registry.
+`eval21 list-metrics` prints the registry.
 
 ### Adding a metric
 
 ```python
-from cm21eval.registry import register
-from cm21eval.metrics.base import Metric
+from eval21.registry import register
+from eval21.metrics.base import Metric
 
 @register("mystat")
 class MyStat(Metric):
@@ -312,12 +312,12 @@ class MyStat(Metric):
 ```
 
 Import the module before the run (a small wrapper script that imports it and
-calls `cm21eval.cli.main`) and pass `--metrics mystat`.
+calls `eval21.cli.main`) and pass `--metrics mystat`.
 
 ## Design
 
 ```
-src/cm21eval/
+src/eval21/
 ├── physics.py        # cosmology, spectra, MFP rays, front widths (numpy)
 ├── spec.py           # Sample / Meta contract
 ├── settings.py       # one frozen dataclass for the whole suite
@@ -342,7 +342,7 @@ src/cm21eval/
   ≈55 s per cone. Use a GPU for production sweeps.
 * **Fail loudly.** Shape mismatches, missing channels and unknown metrics
   raise; a metric that cannot run is listed under `skipped` with the reason.
-* **Numpy core.** `import cm21eval` does not import torch. Torch appears only
+* **Numpy core.** `import eval21` does not import torch. Torch appears only
   inside the torch and fno-21cm adapters.
 
 ## What this suite does not do
@@ -363,7 +363,7 @@ src/cm21eval/
 
 ```bash
 python -m pytest          # 92 tests, ~2 s, no data and no GPU
-cm21eval selftest         # same analytic checks, no pytest
+eval21 selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code
 FNO21CM_ROOT=/work/fno-21cm python -m pytest tests/test_reference_agreement.py

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA = "cm21eval/1"
+SCHEMA = "eval21/1"
 
 
 def jsonable(value):

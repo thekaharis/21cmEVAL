@@ -2,10 +2,10 @@
 
 The public surface is the runner plus the two data contracts:
 
-    from cm21eval import Settings, Sample, evaluate, report
+    from eval21 import Settings, Sample, evaluate, report
 
 An adapter only has to implement ``predict(sample) -> {name: array}``; see
-``cm21eval.adapters``.
+``eval21.adapters``.
 """
 from .runner import evaluate
 from .settings import Settings

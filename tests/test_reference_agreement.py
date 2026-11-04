@@ -17,7 +17,7 @@ import sys
 import numpy as np
 import pytest
 
-from cm21eval import physics
+from eval21 import physics
 
 ROOT = os.environ.get("FNO21CM_ROOT")
 

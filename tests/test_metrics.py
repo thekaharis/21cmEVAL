@@ -1,22 +1,22 @@
 import numpy as np
 import pytest
 
-from cm21eval.metrics.anisotropy import AnisotropyMetrics
-from cm21eval.metrics.bubble import BubbleSizeMetrics
-from cm21eval.metrics.edge import EdgeMetrics
-from cm21eval.metrics.efficiency import EfficiencyMetrics
-from cm21eval.metrics.eft import EftMetrics
-from cm21eval.metrics.front import FrontMetrics
-from cm21eval.metrics.history import HistoryMetrics
-from cm21eval.metrics.morphology import MorphologyMetrics
-from cm21eval.metrics.observable import ObservableMetrics
-from cm21eval.metrics.parity import ParityMetrics
-from cm21eval.metrics.radial import RadialMetrics
-from cm21eval.metrics.spectrum import SpectrumMetrics
-from cm21eval.metrics.symmetry import SymmetryMetrics
-from cm21eval.metrics.voxel import VoxelMetrics
-from cm21eval.settings import Settings
-from cm21eval.spec import Meta, Sample
+from eval21.metrics.anisotropy import AnisotropyMetrics
+from eval21.metrics.bubble import BubbleSizeMetrics
+from eval21.metrics.edge import EdgeMetrics
+from eval21.metrics.efficiency import EfficiencyMetrics
+from eval21.metrics.eft import EftMetrics
+from eval21.metrics.front import FrontMetrics
+from eval21.metrics.history import HistoryMetrics
+from eval21.metrics.morphology import MorphologyMetrics
+from eval21.metrics.observable import ObservableMetrics
+from eval21.metrics.parity import ParityMetrics
+from eval21.metrics.radial import RadialMetrics
+from eval21.metrics.spectrum import SpectrumMetrics
+from eval21.metrics.symmetry import SymmetryMetrics
+from eval21.metrics.voxel import VoxelMetrics
+from eval21.settings import Settings
+from eval21.spec import Meta, Sample
 
 
 def make_sample(shape=(24, 24, 8), seed=0):

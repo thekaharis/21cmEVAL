@@ -73,7 +73,7 @@ def _import_file(path: Path):
     path = path.expanduser().resolve()
     if not path.exists():
         raise FileNotFoundError(f"model file not found: {path}")
-    name = f"_cm21eval_adapter_{path.stem}_{abs(hash(path))}"
+    name = f"_eval21_adapter_{path.stem}_{abs(hash(path))}"
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot import {path}")

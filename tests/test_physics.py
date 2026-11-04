@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from cm21eval import physics
+from eval21 import physics
 
 
 def test_wasserstein_shift():

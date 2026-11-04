@@ -1,6 +1,6 @@
 # Evaluate one or more fno-21cm runs on their own test split.
 #
-#   cm21eval run --config examples/fno21cm_eval.toml
+#   eval21 run --config examples/fno21cm_eval.toml
 #
 # Adjust the paths; everything else is a working default.
 

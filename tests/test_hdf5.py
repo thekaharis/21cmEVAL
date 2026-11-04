@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from cm21eval.data import Hdf5Dataset, open_data
+from eval21.data import Hdf5Dataset, open_data
 
 
 @pytest.fixture()

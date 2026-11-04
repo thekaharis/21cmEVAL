@@ -15,7 +15,7 @@ dropped). Per sample and chunk:
 
 both masked when the truth chunk is ~uniform (mean transverse std <= 1e-3). Reported per chunk
 column: the median over samples, and the share of resolved (k_perp, k_par) cells whose median
-|ratio - 1| is within ``cyl_dead_band`` (``cm21eval plot cyl`` draws those maps). This is the
+|ratio - 1| is within ``cyl_dead_band`` (``eval21 plot cyl`` draws those maps). This is the
 computation of rhizome-neural-operator's ``ebm21cm.native_cyl`` (fno-21cm's
 ``_cylindrical_sums``), which it reproduces on identical chunks.
 

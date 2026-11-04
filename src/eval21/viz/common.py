@@ -1,6 +1,6 @@
 """Loading 21cmEVAL result directories for the figures.
 
-A *run* is one ``cm21eval run`` output directory (``results.json`` + ``curves.npz``), with one
+A *run* is one ``eval21 run`` output directory (``results.json`` + ``curves.npz``), with one
 target field and one or more models. Runs of the same model, target and data are merged (e.g. a
 later run that only adds ``--metrics cylindrical,gallery``); a metric present in two of them is
 an error. Several runs of the same target on different data (e.g.

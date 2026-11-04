@@ -1,6 +1,6 @@
 """Numeric self-checks that need no data and no GPU.
 
-Run with ``cm21eval selftest`` (also collected by pytest). Every check has an
+Run with ``eval21 selftest`` (also collected by pytest). Every check has an
 analytic answer, so the suite itself stays honest: if a metric cannot
 reproduce RMSE=0.1 for a constant offset, or coherence=1 for a perfect
 prediction, the report is not trustworthy.

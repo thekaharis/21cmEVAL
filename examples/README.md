@@ -7,8 +7,8 @@
 | `fno21cm_eval.toml` | full config for comparing fno-21cm checkpoints |
 
 ```bash
-cm21eval demo --out /tmp/demo
-cm21eval run --data /tmp/demo/data \
+eval21 demo --out /tmp/demo
+eval21 run --data /tmp/demo/data \
     --model toy=python:examples/toy_model.py \
     --metrics voxel,spectrum,front --out /tmp/demo/custom
 ```

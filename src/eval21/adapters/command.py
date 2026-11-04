@@ -3,7 +3,7 @@
 The command is run once per sample with ``{input}`` and ``{output}`` replaced
 by temporary ``.npz`` paths::
 
-    cm21eval run --data cubes.npz \
+    eval21 run --data cubes.npz \
         --model julia="command:julia infer.jl {input} {output}"
 
 The input file holds every sample array under its field name plus a ``meta``
@@ -46,7 +46,7 @@ class CommandModelAdapter(BaseAdapter):
         self.include_targets = bool(include_targets)
 
     def predict(self, sample: Sample) -> dict:
-        with tempfile.TemporaryDirectory(prefix="cm21eval-") as workdir:
+        with tempfile.TemporaryDirectory(prefix="eval21-") as workdir:
             work = Path(workdir)
             input_path = work / "sample.npz"
             output_path = work / "prediction.npz"

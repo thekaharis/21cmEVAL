@@ -1,7 +1,7 @@
 """Model adapter interface.
 
 An adapter is the only place that knows about a training framework. It maps
-one :class:`~cm21eval.spec.Sample` to named prediction arrays:
+one :class:`~eval21.spec.Sample` to named prediction arrays:
 
     model = MyAdapter(...)
     prediction = model.predict(sample)   # {"xhi": (Nx, Ny, Nz)}

@@ -1,7 +1,7 @@
 """Comparative summary figures over models: scorecard, per-sample RMSE, spectra, bubbles, history,
 fronts, EFT and morphology.
 
-Generalized from rhizome-neural-operator's ``docs/figures/loreli/src/make_loreli_cm21eval_figs.py``.
+Generalized from rhizome-neural-operator's ``docs/figures/loreli/src/make_loreli_eval21_figs.py``.
 Everything is pooled over the groups (runs of the same target on different data): per-sample
 quantities are concatenated and summarized by the median (bands: 16-84 %), voxel RMSE is pooled
 exactly (voxel-count weighted MSE), front profiles are count-weighted. T_b panels appear when a

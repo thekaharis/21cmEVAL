@@ -1,12 +1,12 @@
 """Command line interface.
 
-    cm21eval run --data cubes/ --model toy=synthetic:1.5 --out results/
-    cm21eval run --config eval.toml
-    cm21eval describe --data cubes/
-    cm21eval list-metrics
-    cm21eval selftest
-    cm21eval demo --out demo/
-    cm21eval plot all --run results/ --out figs/
+    eval21 run --data cubes/ --model toy=synthetic:1.5 --out results/
+    eval21 run --config eval.toml
+    eval21 describe --data cubes/
+    eval21 list-metrics
+    eval21 selftest
+    eval21 demo --out demo/
+    eval21 plot all --run results/ --out figs/
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from .settings import Settings
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="cm21eval",
+        prog="eval21",
         description="End-to-end evaluation for 21cm field emulators.",
     )
     sub = parser.add_subparsers(dest="command", required=True)

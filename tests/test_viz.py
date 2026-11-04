@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from cm21eval.metrics.cylindrical import CylindricalMetrics
-from cm21eval.metrics.gallery import GalleryMetric
-from cm21eval.physics import KBinner, comoving_distance_mpc, los_cell_size_mpc
-from cm21eval.settings import Settings
-from cm21eval.spec import Meta, Sample
+from eval21.metrics.cylindrical import CylindricalMetrics
+from eval21.metrics.gallery import GalleryMetric
+from eval21.physics import KBinner, comoving_distance_mpc, los_cell_size_mpc
+from eval21.settings import Settings
+from eval21.spec import Meta, Sample
 
 BOX, N = 40.0, 16
 CELL = BOX / N
@@ -135,9 +135,9 @@ def test_gallery_stores_stage_planes_and_fields():
 
 def test_plot_all_on_synthetic_runs(tmp_path):
     pytest.importorskip("matplotlib")
-    from cm21eval import report
-    from cm21eval.cli import main
-    from cm21eval.runner import evaluate
+    from eval21 import report
+    from eval21.cli import main
+    from eval21.runner import evaluate
 
     class Data:
         def __init__(self, samples):
@@ -186,14 +186,14 @@ def test_plot_all_on_synthetic_runs(tmp_path):
     made = {p.name for p in (tmp_path / "figs").rglob("*.png")}
     assert {"cyl_error_xhi.png", "summary_scorecard.png", "summary_spectra_xhi.png", "cone_c0.png",
             "cone_c0_deltas.png", "overview_deltas.png"} <= made
-    from cm21eval.viz.slices import cone_name
+    from eval21.viz.slices import cone_name
     assert cone_name("cone12316") == "12316" == cone_name("cone_12316") and cone_name("c0") == "c0"
 
 
 def test_catalog_styles_many_models(tmp_path):
-    from cm21eval import report
-    from cm21eval.viz import Catalog, find_runs
-    from cm21eval.runner import ModelResult
+    from eval21 import report
+    from eval21.viz import Catalog, find_runs
+    from eval21.runner import ModelResult
 
     models = [ModelResult(name=f"m{i}", info={}, metrics={"voxel": {"mse": 1.0, "n_voxels": 1}}, skipped={})
               for i in range(15)]

@@ -8,7 +8,7 @@ stays the single source of truth.
 
 Usage::
 
-    cm21eval run --data cached_cubes.npz \
+    eval21 run --data cached_cubes.npz \
         --model fno="fno21cm:checkpoints/3d_xhi/fno/ckpt/best_model_state_dict.pt" \
         --fno-root /path/to/fno-21cm
 

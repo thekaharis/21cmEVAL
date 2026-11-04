@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from cm21eval.metrics.base import Metric, nanmedian
-from cm21eval.registry import register
+from eval21.metrics.base import Metric, nanmedian
+from eval21.registry import register
 
 
 @register("ionized_fraction")
@@ -54,6 +54,6 @@ class IonizedFraction(Metric):
 
 
 if __name__ == "__main__":
-    from cm21eval.cli import main
+    from eval21.cli import main
 
     raise SystemExit(main())

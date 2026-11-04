@@ -3,11 +3,11 @@ import sys
 import numpy as np
 import pytest
 
-from cm21eval.adapters import build
-from cm21eval.adapters.command import CommandModelAdapter
-from cm21eval.adapters.python import PythonModelAdapter
-from cm21eval.adapters.toy import SmoothThresholdModel
-from cm21eval.data import SyntheticDataset
+from eval21.adapters import build
+from eval21.adapters.command import CommandModelAdapter
+from eval21.adapters.python import PythonModelAdapter
+from eval21.adapters.toy import SmoothThresholdModel
+from eval21.data import SyntheticDataset
 
 
 @pytest.fixture(scope="module")
@@ -83,7 +83,7 @@ def test_toy_adapter_is_bounded(sample):
 def test_fno_adapter_rejects_wrong_geometry(sample):
     from pathlib import Path
 
-    from cm21eval.adapters.fno21cm import Fno21cmAdapter
+    from eval21.adapters.fno21cm import Fno21cmAdapter
 
     adapter = object.__new__(Fno21cmAdapter)
     adapter.spatial_shape = (8, 8, 99)
@@ -98,7 +98,7 @@ def test_fno_adapter_rejects_wrong_geometry(sample):
 
 
 def test_metadata_directory_uses_link_location(tmp_path):
-    from cm21eval.adapters.fno21cm import metadata_directory
+    from eval21.adapters.fno21cm import metadata_directory
 
     target = tmp_path / "runA"
     target.mkdir()
@@ -114,7 +114,7 @@ def test_metadata_directory_uses_link_location(tmp_path):
 def test_unverified_geometry_warns(sample):
     from pathlib import Path
 
-    from cm21eval.adapters.fno21cm import Fno21cmAdapter
+    from eval21.adapters.fno21cm import Fno21cmAdapter
 
     adapter = object.__new__(Fno21cmAdapter)
     adapter.spatial_shape = None
@@ -129,7 +129,7 @@ def test_unverified_geometry_warns(sample):
 
 
 def test_cache_contract_validation(tmp_path):
-    from cm21eval.adapters.fno21cm import validate_cache_contract
+    from eval21.adapters.fno21cm import validate_cache_contract
 
     metadata = {"dataset": {"cache_file": "cubes_3d.h5", "cache_rows": 6600,
                             "cache_shape": [140, 140, 256]}}
@@ -147,7 +147,7 @@ def test_cache_contract_validation(tmp_path):
 def test_cache_sha256_is_enforced(tmp_path):
     import hashlib
 
-    from cm21eval.adapters.fno21cm import validate_cache_contract
+    from eval21.adapters.fno21cm import validate_cache_contract
 
     path = tmp_path / "cache.h5"
     path.write_bytes(b"cubes")
@@ -167,7 +167,7 @@ def test_cache_sha256_is_enforced(tmp_path):
 
 
 def test_density_scale_helper():
-    from cm21eval.adapters.fno21cm import cache_contract
+    from eval21.adapters.fno21cm import cache_contract
 
     assert cache_contract({}) is None
     assert cache_contract({"dataset": {"cache_file": "x.h5"}}) == {
@@ -181,7 +181,7 @@ def test_unknown_adapter():
 
 def test_torch_adapter(sample):
     torch = pytest.importorskip("torch")
-    from cm21eval.adapters.torch import TorchModelAdapter
+    from eval21.adapters.torch import TorchModelAdapter
 
     class MeanModel(torch.nn.Module):
         def forward(self, x):
@@ -196,8 +196,8 @@ def test_torch_adapter(sample):
     assert len(stats["seconds"]) == 3
     assert stats["slices"] == sample.shape[2]
 
-    from cm21eval.runner import evaluate
-    from cm21eval.settings import Settings
+    from eval21.runner import evaluate
+    from eval21.settings import Settings
 
     result = evaluate(adapter, SyntheticDataset(n_samples=1, shape=(12, 12, 6)),
                       Settings(box_mpc=100.0, warmup=1, iters=2),

@@ -22,7 +22,7 @@ dev = ["pytest>=7"]
 all = ["torch>=2.0", "h5py>=3.8", "matplotlib>=3.6", "pytest>=7"]
 
 [project.scripts]
-cm21eval = "cm21eval.cli:main"
+eval21 = "eval21.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -104,7 +104,7 @@ class SyntheticDataset(BaseDataset):
 
 def write_demo(directory, n_samples: int = 4, shape=(64, 64, 64),
                box_mpc: float = 200.0, seed: int = 0) -> Path:
-    """Write a manifest + npz cubes, ready for ``cm21eval run --data``."""
+    """Write a manifest + npz cubes, ready for ``eval21 run --data``."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     dataset = SyntheticDataset(n_samples, shape, box_mpc, seed)

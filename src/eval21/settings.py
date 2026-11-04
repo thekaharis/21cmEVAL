@@ -68,7 +68,7 @@ class Settings:
     cyl_native_los_dz: float | None = None      # native LOS planes uniform in z with this spacing
     cyl_native_los_mpc: float | None = None     # ... or uniform in comoving distance
 
-    # stored slices for ``cm21eval plot gallery`` / ``deltas`` (``gallery``)
+    # stored slices for ``eval21 plot gallery`` / ``deltas`` (``gallery``)
     gallery_samples: int = 4                    # first N samples (ignored when gallery_ids is set)
     gallery_ids: tuple[str, ...] = ()
     gallery_stages: tuple[float, ...] = (0.8, 0.6, 0.4, 0.2)

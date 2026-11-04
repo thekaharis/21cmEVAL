@@ -4,7 +4,7 @@ Not a score: for a few samples (the first ``gallery_samples``, or the ids in ``g
 keeps the truth and prediction slices at the ionization stages ``gallery_stages`` (the slices
 whose true slice-mean x_HI is nearest each stage; evenly spaced slices when the sample carries no
 true x_HI), for every field in ``gallery_fields`` that both the sample (target or input) and the
-prediction provide. ``cm21eval plot gallery`` and ``cm21eval plot deltas`` draw them, merging the
+prediction provide. ``eval21 plot gallery`` and ``eval21 plot deltas`` draw them, merging the
 fields of several runs (e.g. an x_HI pass and a T_b pass) by sample id.
 """
 from __future__ import annotations

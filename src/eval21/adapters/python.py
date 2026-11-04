@@ -20,7 +20,7 @@ from .base import BaseAdapter
 def _load(path: Path, attribute: str):
     if not path.exists():
         raise FileNotFoundError(f"model script not found: {path}")
-    module_name = f"_cm21eval_model_{path.stem}_{abs(hash(path))}"
+    module_name = f"_eval21_model_{path.stem}_{abs(hash(path))}"
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot import {path}")
