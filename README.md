@@ -280,13 +280,16 @@ truth and prediction are always paired. `active` is the last row: slices with
 | `morphology` | 3-D ionized-region count, mean and volume-weighted radius, largest-bubble fraction, IoU at the fixed threshold and at the true ionized cell count | `util/metrics_21cm.py`, `tools_excursion_set_diagnostic.py` |
 | `history` | τ_e, z(x_HI = 0.25/0.5/0.75), Δz, errors in Planck 2018 σ | `util/physical_stats.py`, `viz/physical_evaluation.py` |
 | `observable` | x_HI and dT_b PDFs (W1), partially ionized fraction, dT_b variance/skewness, Δ²₂₁(k), power bias in units of single-slice sample variance | `viz/physical_evaluation.py` |
+| `dtb` | the model's own dT_b field: stage-resolved PDFs (W1), Δ²₂₁(k) ratio, power bias in single-slice σ; needs `--target tb` plus a true `xhi` input | `viz/physical_evaluation.py --dtb-from-npz` |
 | `eft` | transfer T(k), stochasticity P_ε(k), r_uδ, fits b₁ + b_k²k² and P_ε,0 + P_ε,2k² | `viz/physical_evaluation.py`, `util/physical_stats.py` |
 | `front` | RMSE and gradient RMS vs signed distance to the true front, band RMSE, 10–90 front width | `viz/boundary_band_diagnostic.py` |
+| `front3d` | RMSE and gradient RMS vs 3-D signed distance to the true front (approximate LOS), band L2/H1, 10–90 front width | `viz/boundary_band_diagnostic.py --mode 3d` |
 | `parity` | conditional bias E[pred\|true] − true per truth bin, per-bin spread and RMSE, partial-range RMSE | `viz/parity_diagnostic.py` |
 | `radial` | isotropic 3-D P(k) ratio and coherence (cross-check; non-periodic LOS) | `util/metrics_21cm.py` |
 | `anisotropy` | cylindrical (k_perp, k_par) power ratio and coherence at z = 7/9/11 | `viz/power_spectrum_evaluation.py` |
 | `cylindrical` | full cylindrical (k_perp, k_par) power ratio and coherence maps per sample, LOS chunks at ionization stages (default x̄_HI 0.9/0.7/0.5/0.3/0.1) or fixed z, share of resolved cells within ±0.1, native-resolution limits; drawn by `eval21 plot cyl` | `ebm21cm.native_cyl` (rhizome), `viz/power_spectrum_evaluation._cylindrical_sums` |
 | `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `eval21 plot gallery` / `deltas` | `ebm21cm.compare_cones3d`, `ebm21cm.delta_slices` (rhizome) |
+| `survey` | not a score: partial fractions, transverse/LOS total variation, band width per TV, voxel histogram of truth and prediction | `legacy/xhi2d/survey_truth_sharpness.py` |
 | `efficiency` | parameters, ms per lightcone (median/p16/p84), samples/s, slices/s, peak memory | `viz/inference_speed_eval.py` |
 | `ensemble` | with `--draws N`: CRPS, spread/skill, rank histogram and coverage (voxels), PIT calibration of x̄(z), history and Δ²(k) per stage, cosmic-variance comparison | — |
 | `symmetry` | RMS change under a transverse x↔y swap | `viz/visualize_3d.py` |

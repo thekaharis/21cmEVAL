@@ -404,6 +404,35 @@ Power-bias significance is the emulator bias in units of the Gaussian sample var
 single slice; `1/significance²` is how many independent slices an observer must average before
 the bias equals their statistical error.
 
+### `dtb`
+
+The model's own brightness temperature, scored like fno-21cm's `--dtb-from-npz`
+(`viz/physical_evaluation.py`, `physical_dtb`). Where `observable` recomputes dT_b from x_HI in
+the saturated limit, this metric takes the `tb` field the model actually predicts (mK) and
+compares it with the simulated T_b. It runs only on a `--target tb` pass: on an x_HI run it
+returns a note and increments `skipped_samples`.
+
+Stages are the true x_HI slice means, so the sample must carry the true x_HI as an input (an
+`xhi` field alongside the `tb` target, as in LoReLi's T_b manifests).
+
+| key | meaning |
+|---|---|
+| `stage_labels`, `stages`, `active` | stage-resolved block; `active` is the last stage |
+| stage `label`, `n_slices` | stage label and slice count |
+| stage `w1_dtb_mk` | Wasserstein-1 distance between the pooled dT_b PDFs, mK |
+| stage `delta2_dtb_ratio[]` | Δ²₂₁(pred)/Δ²₂₁(truth) at each `k_targets` value |
+| stage `power_bias_significance_dtb[]` | (P_pred − P_truth)/σ_single-slice per k target |
+| stage `k_targets` | the k values of those two lists, 1/Mpc |
+| `dtb_range_mk` | histogram range actually used |
+| `skipped_samples`, `n_samples` | counts |
+
+Histogram range and bins are metric options: `[metric_options.dtb] dtb_range_mk = [-250, 100]`,
+`dtb_bins = 350` (the default range is wider than `observable`'s, to cover the absorption
+trough). The per-sample PDFs, per-slice moments and binned Δ² curves are exported as `dtb_*`
+arrays. There is no `eval21 plot` figure for this metric yet; use `curves.npz`.
+
+### `front3d`
+
 ### `eft`
 
 Effective-field-theory bias diagnostics. With `u = x_HI − <x_HI>` per slice and the input
@@ -462,6 +491,26 @@ sampling in Mpc, so anisotropic cells are handled correctly. Slices with no fron
 A diffuse front appears here as a larger width, in `spectrum` as suppressed high-k power and
 low coherence, and in `bubble` as an excess of small bubbles; the three diagnostics should
 agree.
+
+### `front3d`
+
+The 3-D counterpart of `front` (fno-21cm `boundary_band_diagnostic --mode 3d`). The signed
+distance to the true `x_HI = threshold` surface is a 3-D Euclidean distance transform with
+sampling `(dx, dy, los_cell_mpc)`; unlike `front`, the error gradient includes the LOS
+derivative. A single mean LOS cell size is used, so distances are approximate along the
+lightcone — the original's caveat. `los_cell_mpc` is a metric option (default 13 Mpc):
+`[metric_options.front3d] los_cell_mpc = 13.0`.
+
+| key | meaning |
+|---|---|
+| `los_cell_mpc` | LOS sampling used by the transform |
+| `front_width_truth_mpc`, `front_width_pred_mpc` | 10–90 transition width of the pooled profile |
+| `bands` | `L2_band<b>_mean`, `H1_band<b>_mean`, `errfrac_band<b>_mean` for each `front_bands_mpc` |
+| `n_samples_with_fronts`, `n_samples` | samples that contained a front |
+
+The metric is voxel-wise and x_HI-only: a `--mode generative` run skips it, and a T_b pass
+skips it with the standard target reason. It exports the same profile and band arrays as
+`front` under the `front3d_*` prefix.
 
 ### `parity`
 
@@ -576,6 +625,31 @@ Slices are stored as `gallery_<field>_truth` / `gallery_<field>_pred`,
 shape `(samples, stages, H, W)`. A sample with no true x_HI (e.g. a T_b target with no x_HI
 input) uses evenly spaced slices and records that in `plane_source`.
 
+### `survey`
+
+Not a score: an ionization-front survey of the truth and of the prediction (fno-21cm
+`legacy/xhi2d/survey_truth_sharpness.py`). Every transverse plane is binned by its **own**
+slice-mean x_HI (50 bins), and the following are accumulated over every LOS plane of every
+sample:
+
+- partially ionized fractions at three thresholds (`1e-3`, `0.01`, `0.1` from either phase);
+- transverse and LOS total variation per voxel (periodic forward differences transversally,
+  interior differences along z), and the 99.9th percentile of the transverse gradient;
+- the band (`0.1 < x_HI < 0.9`) pixel fraction and a transition width in band pixels per unit
+  of transverse total variation;
+- a 200-bin histogram of voxel values.
+
+`result()` reports the global fractions and plane count; the binned curves and histograms are
+exported as `survey_*` arrays (`survey_partial_bands`, `survey_truth_*`, `survey_pred_*`).
+
+```text
+truth / pred: {frac_ionized, frac_neutral, frac_partial, n_planes}
+n_samples
+```
+
+x_HI-only; a T_b pass skips it. It answers "how sharp is the field the model was trained on",
+not "how good is the model"; the prediction half exists as a reference.
+
 ## Choosing a metric set
 
 ```bash
@@ -587,6 +661,9 @@ input) uses evenly spaced slices and records that in `plane_source`.
 
 # Stochastic / generative models
 --draws 16 --mode generative --metrics spectrum,bubble,observable,history,ensemble
+
+# A T_b pass: score the model's own brightness temperature
+--target tb --metrics voxel,spectrum,dtb
 ```
 
 `--metrics all` runs every registered metric whose needs are met. Metrics that were not run are
@@ -596,14 +673,21 @@ reason.
 ## Metric options
 
 `[metric_options.<name>]` is handed to that metric's constructor as keyword arguments
-(`registry.build` → `create(name, settings, options.get(name, {}))`). It exists for custom
-metrics that need per-family configuration: built-in families read `Settings`, so change their
-knobs with `--set` or `[settings]`, not with metric options.
+(`registry.build` → `create(name, settings, options.get(name, {}))`). Most built-in families
+read `Settings`, so change their knobs with `--set` or `[settings]`. The exceptions are
+`dtb` (`dtb_range_mk`, `dtb_bins`) and `front3d` (`los_cell_mpc`), which are per-metric by
+nature:
 
 ```toml
-[metric_options.mystat]
-window = 3
+[metric_options.dtb]
+dtb_range_mk = [-250, 100]
+dtb_bins = 350
+
+[metric_options.front3d]
+los_cell_mpc = 13.0
 ```
+
+Custom metrics can use the same mechanism for any per-family configuration.
 
 The distributed `examples/fno21cm_eval.toml` shows `n_k_bins` under
 `[metric_options.spectrum]`; the effective value for the built-in `spectrum` metric is the

@@ -35,7 +35,7 @@ nothing about training frameworks.
 ## Design principles
 
 **One pass.** Every enabled metric updates from the same prediction, inside a single iteration
-over the dataset, for each model. A sweep with 17 metrics costs the same forward passes as a
+over the dataset, for each model. A sweep with 20 metrics costs the same forward passes as a
 sweep with one; the metrics differ only in the numpy work after `predict`.
 
 **Constant memory.** Accumulators are sums, histograms, per-slice arrays and per-sample scalars.

@@ -21,6 +21,10 @@ from .base import Metric
 
 @register("front3d")
 class Front3dMetrics(Metric):
+    """Error versus 3-D distance to the ionization front (approximate)."""
+    targets = ("xhi",)
+    pointwise = True
+
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.los_cell_mpc = float(self.options.get("los_cell_mpc", 13.0))

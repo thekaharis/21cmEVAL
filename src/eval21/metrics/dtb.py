@@ -32,6 +32,7 @@ from .cylindrical import true_xhi
 
 @register("dtb")
 class DtbMetrics(Metric):
+    """Score the model's own dT_b field: PDFs, 21-cm power, power bias."""
     needs = ()
 
     def __init__(self, settings, options=None):

@@ -1023,11 +1023,13 @@ Each class is decorated with `@register("name")` in its module; the name is what
 | `anisotropy` | `AnisotropyMetrics` | `eval21.metrics.anisotropy` | `()` | `None` | `partial` |
 | `bubble` | `BubbleSizeMetrics` | `eval21.metrics.bubble` | `()` | `('xhi',)` | `False` |
 | `cylindrical` | `CylindricalMetrics` | `eval21.metrics.cylindrical` | `()` | `None` | `partial` |
+| `dtb` | `DtbMetrics` | `eval21.metrics.dtb` | `()` | `None` | `False` |
 | `edge` | `EdgeMetrics` | `eval21.metrics.edge` | `()` | `None` | `True` |
 | `efficiency` | `EfficiencyMetrics` | `eval21.metrics.efficiency` | `()` | `None` | `False` |
 | `eft` | `EftMetrics` | `eval21.metrics.eft` | `('density',)` | `None` | `False` |
 | `ensemble` | `EnsembleMetrics` | `eval21.metrics.ensemble` | `()` | `None` | `partial` |
 | `front` | `FrontMetrics` | `eval21.metrics.front` | `()` | `('xhi',)` | `partial` |
+| `front3d` | `Front3dMetrics` | `eval21.metrics.front3d` | `()` | `('xhi',)` | `True` |
 | `gallery` | `GalleryMetric` | `eval21.metrics.gallery` | `()` | `None` | `False` |
 | `history` | `HistoryMetrics` | `eval21.metrics.history` | `()` | `('xhi',)` | `False` |
 | `morphology` | `MorphologyMetrics` | `eval21.metrics.morphology` | `()` | `('xhi',)` | `partial` |
@@ -1035,5 +1037,6 @@ Each class is decorated with `@register("name")` in its module; the name is what
 | `parity` | `ParityMetrics` | `eval21.metrics.parity` | `()` | `None` | `True` |
 | `radial` | `RadialMetrics` | `eval21.metrics.radial` | `()` | `None` | `partial` |
 | `spectrum` | `SpectrumMetrics` | `eval21.metrics.spectrum` | `()` | `None` | `partial` |
+| `survey` | `SurveyMetrics` | `eval21.metrics.survey` | `()` | `('xhi',)` | `False` |
 | `symmetry` | `SymmetryMetrics` | `eval21.metrics.symmetry` | `()` | `None` | `True` |
 | `voxel` | `VoxelMetrics` | `eval21.metrics.voxel` | `()` | `None` | `True` |

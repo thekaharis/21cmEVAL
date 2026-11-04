@@ -67,6 +67,9 @@ def accumulate(block: np.ndarray, acc: dict) -> None:
 
 @register("survey")
 class SurveyMetrics(Metric):
+    """Ionization-front survey of truth and prediction (not a score)."""
+    targets = ("xhi",)          # an x_HI survey; the dT_b field has its own metric
+
     def __init__(self, settings, options=None):
         super().__init__(settings, options)
         self.acc = {"truth": _accumulators(), "pred": _accumulators()}
