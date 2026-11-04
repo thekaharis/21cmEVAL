@@ -94,7 +94,7 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
         # square (k_perp, k_par) panels: the figure follows the grid, not the other way round
         fig, axes = plt.subplots(len(cat.models), len(columns),
                                  figsize=(3.3 * len(columns) + 1.8, 3.25 * len(cat.models) + 1.1),
-                                 squeeze=False, constrained_layout=True)
+                                 squeeze=False, layout="compressed")   # no slack around square panels
         pcm = None
         shares = {}
         for col, value in enumerate(columns):
@@ -129,7 +129,7 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
                     ax.set_xlabel(r"$k_\perp$  [Mpc$^{-1}$]")
                 if col == 0:
                     ax.set_ylabel(f"{wrap_label(cat.label(m), 24)}\n" + r"$k_\parallel$  [Mpc$^{-1}$]", fontsize=10)
-        bar = fig.colorbar(pcm, ax=axes, shrink=0.6, aspect=30, extend="both")
+        bar = fig.colorbar(pcm, ax=axes, shrink=0.6, aspect=30, extend="both", pad=0.015)
         bar.set_label(r"$P_{\rm pred}/P_{\rm true} - 1$  (white: within $\pm$" + f"{band:g})")
         ticks = sorted({-vmax, -band, 0.0, band, vmax} | set(np.round(np.arange(-vmax, vmax + 1e-9, 0.2), 2)))
         bar.set_ticks(ticks)
@@ -140,6 +140,7 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
         if limited:
             head += "\nhatched: beyond the truth's native resolution (not counted)"
         fig.suptitle(head)
+        _trim_width(fig, axes, bar)
         save(fig, Path(out), f"{prefix}_{target}", dpi=150, quiet=quiet)
         summary[target] = shares
         if not quiet:
@@ -149,6 +150,17 @@ def plot_cylindrical(cat, out: Path, fields=None, vmax=0.4, dead=None, prefix="c
                 print(f"{cat.label(m):28s} share within ±{band:g}: "
                       + " ".join(f"{name(c)} {100 * f:.0f}%" for c, f in enumerate(fr)))
     return summary
+
+
+def _trim_width(fig, axes, bar, gap_in=0.3):
+    """Square panels are height-limited: give back the spare width between panels and colour bar."""
+    for _ in range(3):
+        fig.canvas.draw()
+        right = max(ax.get_window_extent().x1 for ax in np.ravel(axes))
+        spare = (bar.ax.get_window_extent().x0 - right) / fig.dpi - gap_in
+        if spare < 0.05:
+            break
+        fig.set_figwidth(fig.get_figwidth() - spare)
 
 
 def _same_mode(cat, target):
