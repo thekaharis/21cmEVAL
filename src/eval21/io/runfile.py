@@ -345,9 +345,10 @@ class RunFile:
         self.path = Path(path)
         self.h5 = h5py.File(self.path, "r")
         schema = _text(self.h5.attrs.get("schema", ""))
-        if not schema.startswith("eval21-run/"):
+        major = schema.rsplit("/", 1)[-1].split(".", 1)[0] if "/" in schema else ""
+        if not schema.startswith("eval21-run/") or major != "1":
             self.h5.close()
-            raise ValueError(f"{self.path} is not an eval21 run file (schema {schema!r})")
+            raise ValueError(f"{self.path} is not a supported eval21 run file (schema {schema!r})")
         self.schema = schema
 
     # -- identity ---------------------------------------------------------------
