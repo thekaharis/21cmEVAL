@@ -79,6 +79,7 @@ A run writes `results.json`, `summary.csv`, `stages.csv`, `report.md` and `curve
 | [API reference](api.md) | public functions and classes by module, with signatures |
 | [Development](development.md) | test suite and fixture, conventions, adding metrics/figures/datasets |
 | [Agent handoff](agent-handoff.md) | changelog of the visualization reorganisation, merges and new metrics, with migration notes |
+| [Run file format](design/run-file.md) | design spec: `eval21-run/1` HDF5 files and the optional `eval21-cache/1` inference cache |
 
 ## The two contracts
 

@@ -12,7 +12,7 @@ agent needs to work on or consume this repo without re-deriving the session.
 |---|---|---|
 | Figure package | `src/eval21/viz/` renamed to `src/eval21/visualization/`; imports, tests, README updated | `fc16e5f` |
 | Collage tool | `docs/readme_collage.py` moved to `src/eval21/visualization/collage.py`; run as a module | `fc16e5f` |
-| Docs | 10 documentation files in `docs/` (~21k words) + generated API reference + generator; this handoff makes 11 | `fc16e5f`, `e60c3e1` |
+| Docs | 10 documentation files in `docs/` (~21k words) + generated API reference + generator; this handoff and later design notes are additional | `fc16e5f`, `e60c3e1` |
 | Metrics | `feat/viz-suite` merged: new `dtb`, `front3d`, `survey` metrics and many per-sample arrays | `d22de94` |
 | Metric safety | `front3d`/`survey` restricted to x_HI targets; `front3d` marked pointwise | `e60c3e1` |
 | Build branch | `feat/build` recorded as merged with `-s ours`; **its code is not in main** | `8503a9f` |
