@@ -18,6 +18,8 @@ PyTorch modules, external programs (read npz / write npz), and fno-21cm
 checkpoints (rhizome models run through the Python adapter). Metrics are numpy-only, streaming accumulators, so a 200-cone
 sweep costs one forward pass and constant memory.
 
+[DSH-Eval21-Explorer](https://github.com/thekaharis/dsh-eval21-explorer) is a dedicated plugin for [DeepSeek Harness](https://www.deepseek.com/en/harness/) for interacting with the data.
+
 ```
 eval21 demo --out demo          # synthetic data + toy model, ~10 s
 eval21 selftest                 # analytic checks, no data needed
