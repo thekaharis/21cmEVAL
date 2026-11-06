@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 FIGURE_MODULES = (
-    "cylindrical", "slices", "summary",
+    "cylindrical", "slices",
     "spectra", "physical", "bubbles", "diagnostics", "maps", "ensemble",
 )
 

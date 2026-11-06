@@ -46,29 +46,20 @@ def test_physical_figures(tmp_path, viz_fixture):
 
 
 def test_map_figures(tmp_path, viz_fixture):
-    names = [n for n in _group("maps") if n != "lightcone_animation"]
-    assert {"comparison_3d", "lightcone_3d", "scatter_3d", "lightcone_grid_3d", "multifield_slices",
-            "multifield_strips", "slice_comparison", "representative_z_slices"} <= set(names)
+    names = _group("maps")
+    assert names == ["gallery", "multifield_los", "scatter_3d"]
     results = viz_fixture / "results"
     done = registry.run(names, _ctx([results], tmp_path, results / "predictions"))
     _check_group(done, names, tmp_path)
     # store-only figures skip with a reason when no cubes were stored
-    done = registry.run(["comparison_3d"], _ctx([results], tmp_path / "nostore"))
-    assert done["comparison_3d"].startswith("skipped")
-
-
-def test_lightcone_animation(tmp_path, viz_fixture):
-    results = viz_fixture / "results"
-    done = registry.run(["lightcone_animation"],
-                        _ctx([results], tmp_path, results / "predictions", frames=4, dpi=40))
-    written = done["lightcone_animation"]
-    assert isinstance(written, list) and written and written[0].suffix == ".gif"
+    done = registry.run(["scatter_3d"], _ctx([results], tmp_path / "nostore"))
+    assert done["scatter_3d"].startswith("skipped")
 
 
 def test_maps_on_generative_run(tmp_path, viz_fixture):
     gen = viz_fixture / "results_gen"
-    done = registry.run(["comparison_3d", "lightcone_3d", "ensemble"],
+    done = registry.run(["scatter_3d", "multifield_los", "ensemble"],
                         _ctx([gen], tmp_path, gen / "predictions"))
-    assert isinstance(done["comparison_3d"], list) and done["comparison_3d"]
+    assert isinstance(done["scatter_3d"], list) and done["scatter_3d"]
     assert (tmp_path / "ensemble_calibration_xhi.png").exists()
     assert list((tmp_path / "ensemble_draws").glob("*.png"))

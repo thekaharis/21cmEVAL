@@ -104,7 +104,7 @@ src/eval21/
 ├── data/                # npz (+manifest), HDF5 fno-21cm cache, eval21 cube cache, synthetic
 ├── build/               # simulation folder → eval21 cube cache (HDF5)
 ├── metrics/             # one module per metric family, all streaming accumulators
-└── visualization/       # figure registry, data loading, 43 figures, README collage
+└── visualization/       # figure registry, data loading, 23 figures, README collage
 ```
 
 ## Object model

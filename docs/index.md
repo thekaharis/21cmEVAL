@@ -75,7 +75,7 @@ A run writes `results.json`, `summary.csv`, `stages.csv`, `report.md` and `curve
 | [Metrics](metrics.md) | stage binning, every metric's definition and result keys, settings, caveats |
 | [Model adapters](adapters.md) | adapter protocol, `python:`/`torch:`/`command:`/`fno21cm:` specs, draws, cache contracts |
 | [Reports](reports.md) | `results.json` schema, CSV/NPZ layouts, the Markdown report |
-| [Visualization](visualization.md) | the `eval21.visualization` package, figure registry, all 43 figures, layout conventions |
+| [Visualization](visualization.md) | the `eval21.visualization` package, figure registry, all 23 figures, layout conventions |
 | [API reference](api.md) | public functions and classes by module, with signatures |
 | [Development](development.md) | test suite and fixture, conventions, adding metrics/figures/datasets |
 | [Agent handoff](agent-handoff.md) | changelog of the visualization reorganisation, merges and new metrics, with migration notes |

@@ -96,11 +96,6 @@ def _token(label: str) -> str:
     return label.replace(" ", "_").replace("-", "_").replace(".", "p")
 
 
-def pretty_stage(label: str) -> str:
-    """``xbar_HI 0.02-0.20`` -> ``x̄_HI 0.02–0.20`` (the original's stage labels)."""
-    return label.replace("xbar_HI", "x̄_HI").replace("-", "–")
-
-
 def _coherence_dropped(metric: dict) -> bool:
     """True when a generative run stripped the coherence from this metric's results."""
     return any("coherence" in key for key in (metric.get("_generative_dropped") or []))
@@ -271,51 +266,6 @@ def ps_overlay(ctx):
         shared_legend(fig, handles=model_handles(cat),
                       extra=style_key([("16–84 % over cones", {"kind": "band", "color": "0.6", "alpha": 0.35})]))
         written.append(save(fig, ctx.out, f"ps_overlay_{target}", dpi=DPI, quiet=ctx.quiet))
-    if not written:
-        raise SkipFigure("no 'spectrum' results")
-    return written
-
-
-@figure("ps_stage_curves", group="spectra",
-        help="per model: P_pred/P_true and r(k) per reionization stage (fno-21cm ps_stage_curves)")
-def ps_stage_curves(ctx):
-    cat = ctx.catalog
-    plt = pyplot()
-    written = []
-    for target in cat.targets:
-        spec = _spectra(cat, target)
-        if spec is None:
-            continue
-        first = spec[cat.models[0]]
-        k = first.k
-        level = float(first.settings.get("coherence_level", 0.9))
-        labels = [pretty_stage(s) for s in first.labels[:-1]]          # exclude "active"
-        cmap = plt.get_cmap("viridis")
-        n = len(cat.models)
-        fig, axes = plt.subplots(n, 2, figsize=(12, 3.6 * n), squeeze=False)
-        for row, m in enumerate(cat.models):
-            for col, (data, ylabel, ref) in enumerate([
-                    (spec[m].ratio[0], RATIO, 1.0),
-                    (spec[m].r[0], r"$r(k_\perp)$", level)]):
-                ax = axes[row][col]
-                ax.axhline(ref, color="grey", lw=0.8, ls="--")
-                for s, label in enumerate(labels):
-                    ax.plot(*_finite(k, data[s]), color=cmap(s / max(len(labels) - 1, 1)), label=label)
-                ax.set_xscale("log")
-                if col == 0:
-                    if np.any(np.isfinite(data[:-1]) & (data[:-1] > 0)):
-                        ax.set_yscale("log")
-                else:
-                    ax.set_ylim(0, 1.05)
-                    if not spec[m].coherence:
-                        ax.text(0.5, 0.5, "no coherence (generative run)", ha="center", va="center",
-                                transform=ax.transAxes, color="0.4")
-                ax.set_xlabel(K_PERP)
-                ax.set_ylabel(ylabel)
-                ax.set_title(wrap_label(f"{cat.label(m)} by reionization stage", 60))
-        fig.tight_layout()
-        shared_legend(fig, axes=axes[0])                 # the stage colours, once
-        written.append(save(fig, ctx.out, f"ps_stage_curves_{target}", dpi=DPI, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no 'spectrum' results")
     return written
@@ -717,100 +667,4 @@ def ps_coherence_highk(ctx):
             w.writerows(rows)
     if not written:
         raise SkipFigure("no 'spectrum' results")
-    return written
-
-
-def place_labels(ax, labels, fixed=None):
-    """Label points, choosing per label the first offset whose text box (estimated in display
-    pixels) overlaps no earlier label and no point (rhizome ps_plane3d)."""
-    ax.figure.canvas.draw()
-    to_px = ax.transData.transform
-    dpi = ax.figure.dpi / 72
-    points = [to_px((x, y)) for _, x, y, _ in labels]
-    fixed = fixed or {}
-    boxes = []
-    candidates = [(7, 4, "left"), (7, -12, "left"), (-7, 4, "right"), (-7, -12, "right"),
-                  (7, 14, "left"), (-7, 14, "right"), (7, -22, "left"), (-7, -22, "right")]
-    for text, x, y, hollow in labels:
-        size = 7.5 if hollow else 8.5
-        w, h = 0.6 * size * len(text) * dpi, size * 1.2 * dpi
-        px, py = to_px((x, y))
-        own = [(fixed[text][0], fixed[text][1], "right" if fixed[text][0] < 0 else "left")] if text in fixed else []
-        for dx, dy, ha in own or candidates:
-            x0 = px + dx * dpi - (w if ha == "right" else 0)
-            y0 = py + dy * dpi
-            box = (x0, y0, x0 + w, y0 + h)
-            clash = any(box[0] < b[2] and b[0] < box[2] and box[1] < b[3] and b[1] < box[3] for b in boxes)
-            clash |= any(box[0] - 4 < qx < box[2] + 4 and box[1] - 4 < qy < box[3] + 4 for qx, qy in points)
-            if not clash or own:
-                break
-        boxes.append(box)
-        ax.annotate(text, (x, y), textcoords="offset points", xytext=(dx, dy), ha=ha, fontsize=size,
-                    color=INK_MUTED if hollow else INK_2)
-
-
-@figure("ps_plane3d", group="spectra",
-        help="small-scale coherence r(k>1) vs |P_pred/P_true - 1| (k>1), active stage (rhizome ps_plane3d)")
-def ps_plane3d(ctx):
-    cat = ctx.catalog
-    plt = pyplot()
-    kmin = float(ctx.options.get("plane_kmin", 1.0))
-    note = str(ctx.options.get("note", "") or "")
-    written, reasons = [], []
-    for target in cat.targets:
-        spec = _spectra(cat, target)
-        if spec is None:
-            continue
-        points = {}
-        for m in cat.models:
-            s = spec[m]
-            band = s.k >= kmin
-            if not band.any():
-                break
-            r = float(_nanmedian(s.r[0][-1][band])) if s.coherence else float("nan")
-            err = float(_nanmedian(np.abs(s.ratio[0][-1][band] - 1.0)))
-            points[m] = (r, err, s.n)
-        if not points:
-            reasons.append(f"{target}: no k bin above {kmin:g} / Mpc")
-            continue
-        fig, ax = plt.subplots(figsize=(9.5, 6.4), facecolor=SURFACE)
-        ax.set_facecolor(SURFACE)
-        lines = ["group,model,coherence_r_small,power_err_small,n_cones"]
-        groups = "+".join(cat.group_labels(target))
-        labels = []
-        for i, (m, (r, err, n)) in enumerate(points.items()):
-            lines.append(f"{groups},{m},{r:.4f},{err:.4f},{n}")
-            if not (np.isfinite(r) and np.isfinite(err)):
-                continue
-            color = cat.color(m)
-            hollow = i == 0
-            ax.scatter([r], [err], s=70, label=cat.label(m), zorder=3, linewidths=1.6,
-                       facecolors="none" if hollow else color, edgecolors=color)
-            labels.append((cat.label(m), r, err, hollow))
-        if labels:
-            ax.margins(0.12)
-            if ctx.opt("point_labels", 0, int):
-                place_labels(ax, [(wrap_label(t, 24), *rest) for t, *rest in labels])
-        else:
-            ax.text(0.5, 0.5, "no coherence (generative runs)", ha="center", va="center",
-                    transform=ax.transAxes, color=INK_MUTED)
-        ax.set_xlabel(f"small-scale coherence  r(k > {kmin:g} Mpc$^{{-1}}$)  (higher better)", color=INK)
-        ax.set_ylabel(f"small-scale power error  |P$_{{pred}}$/P$_{{true}}$ − 1|, k > {kmin:g}  (lower better)",
-                      color=INK)
-        ax.set_title(f"Placement vs amount of small-scale structure ({field_name(target)}, active stage)",
-                     loc="left", color=INK)
-        ax.grid(color=GRID, lw=0.8)
-        for sp in ax.spines.values():
-            sp.set_color(GRID)
-        ax.tick_params(colors=INK_2)
-        if note:
-            fig.text(0.01, 0.01, note, fontsize=7.5, color=INK_MUTED, ha="left", va="bottom", wrap=True)
-        fig.tight_layout(rect=(0, 0.06 if note else 0, 1, 1))
-        if labels:
-            shared_legend(fig, fontsize=9)
-        fig.set_facecolor(SURFACE)
-        written.append(save(fig, ctx.out, f"ps_plane3d_{target}", dpi=150, quiet=ctx.quiet))
-        (ctx.out / f"ps_plane3d_{target}.csv").write_text("\n".join(lines) + "\n")
-    if not written:
-        raise SkipFigure("; ".join(reasons) or "no 'spectrum' results")
     return written

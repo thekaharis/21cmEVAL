@@ -854,14 +854,14 @@ Figures from 21cmEVAL result directories (``eval21 plot``; needs matplotlib).
 from eval21.visualization import (
     Catalog, Run, find_runs, PlotContext, SkipFigure,
     figure, load_all, run,
-    plot_cylindrical, plot_gallery, plot_deltas, plot_summary,
+    plot_cylindrical, plot_gallery,
 )
 ```
 
 The package re-exports the figure registry (`figure`, `load_all`, `run`,
 `PlotContext`, `SkipFigure`), the result loader (`Run`, `Catalog`, `find_runs`)
-and the hand-written figures (`plot_cylindrical`, `plot_gallery`,
-`plot_deltas`, `plot_summary`). Importing it does not import matplotlib.
+and the hand-written figures (`plot_cylindrical`, `plot_gallery`).
+Importing it does not import matplotlib.
 
 ## `eval21.visualization.registry`
 

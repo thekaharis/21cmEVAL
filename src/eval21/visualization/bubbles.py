@@ -58,16 +58,6 @@ def _curve_key(label: str) -> str:
     return f"xbar{lo}_{hi}"
 
 
-def stage_title(label: str) -> str:
-    """Turn the stored ASCII stage label into a math-set axis title (replot_bubble_size)."""
-    label = str(label)
-    if label.startswith("xbar_HI"):
-        return r"$\bar{x}_{\rm HI}$" + label[len("xbar_HI"):]
-    if label.startswith("active"):
-        return "all active stages" + label[len("active"):]
-    return label
-
-
 def _percentile(a, q):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -158,29 +148,6 @@ def _collect(cat):
     return out
 
 
-def _stage_option(ctx, n):
-    value = ctx.opt("stages", None)
-    if value is None or value == "":
-        return list(range(n))
-    if isinstance(value, (int, float)):
-        stages = [int(value)]
-    elif isinstance(value, (list, tuple)):            # cli parses "1,2,5" into a tuple
-        stages = [int(v) for v in value]
-    else:
-        stages = [int(v) for v in str(value).replace(";", ",").split(",") if str(v).strip()]
-    bad = [s for s in stages if not 0 <= s < n]
-    if bad:
-        raise SkipFigure(f"stages {bad} out of range 0..{n - 1}")
-    return stages
-
-
-def _flag(ctx, key, default=True):
-    value = ctx.opt(key, default)
-    if isinstance(value, str):
-        return value.strip().lower() not in ("0", "false", "no", "off", "")
-    return bool(value)
-
-
 def _title(text, ctx):
     return f"{text} — {ctx.title}" if ctx.title else text
 
@@ -267,70 +234,4 @@ def bubble_size_summary(ctx):
         written.append(_bars(ctx, data, stages, str, (15, 5), 30,
                              "BSD distribution error (0 / box-length caps)", {},
                              f"bubble_size_summary{suffix}"))
-    return written
-
-
-# ----------------------------------------------------------------------------------------------- #
-# replot_bubble_size.py
-# ----------------------------------------------------------------------------------------------- #
-@figure("bsd_clean", group="bubbles", needs=("curves",),
-        help="MFP bubble-size PDFs, central curves only, no bands (fno-21cm replot_bubble_size)")
-def bsd_clean(ctx):
-    plt = pyplot()
-    cat = ctx.catalog
-    stat = str(ctx.opt("stat", "mean"))
-    if stat not in ("mean", "med"):
-        raise SkipFigure(f"stat must be mean or med, got {stat!r}")
-    markers = _flag(ctx, "markers", True)
-    ncols = int(ctx.opt("ncols", 3))
-    central = _nanmean if stat == "mean" else (lambda a: _percentile(a, 50))
-    written = []
-    for suffix, data in _collect(cat):
-        labels, centers, edges = data["labels"], data["centers"], data["edges"]
-        stages = _stage_option(ctx, len(labels))
-        n_cols = min(ncols, len(stages))
-        n_rows = int(np.ceil(len(stages) / n_cols))
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(4.8 * n_cols, 3.9 * n_rows), squeeze=False)
-        axes = axes.ravel()
-        truth = data["models"][cat.models[0]]
-        for panel, si in enumerate(stages):
-            ax = axes[panel]
-            ax.plot(centers, central(truth["truth_mass"][si]), color="black", linewidth=1.2,
-                    label="21cmFAST truth", zorder=5)
-            if markers:
-                ax.scatter(edges[0], truth["truth_underflow"][si], color="black", marker="v", s=26, zorder=5)
-                ax.scatter(edges[-1], truth["truth_censored"][si], color="black", marker="^", s=26, zorder=5)
-            for m in cat.models:
-                d = data["models"][m]
-                color = cat.color(m)
-                ax.plot(centers, central(d["pred_mass"][si]), color=color, ls=cat.ls(m), linewidth=0.85,
-                        label=cat.label(m))
-                if markers:
-                    ax.scatter(edges[0], d["pred_underflow"][si], color=color, marker="v", s=20)
-                    ax.scatter(edges[-1], d["pred_censored"][si], color=color, marker="^", s=20)
-            ax.set_xscale("log")
-            ax.set_xlim(edges[0], edges[-1])
-            ax.set_ylim(bottom=0)
-            ax.set(title=stage_title(labels[si]), xlabel="MFP distance $R$ [cMpc]",
-                   ylabel="probability per log bin")
-            ax.grid(alpha=0.2)
-        for ax in axes[len(stages):]:
-            ax.set_visible(False)
-        fig.suptitle(_title("Transverse mean-free-path ionized-bubble size distributions", ctx))
-        fig.tight_layout()
-        key = style_key([("no ionized pixels", {"marker": "v", "ms": 6}),
-                         ("censored at box length", {"marker": "^", "ms": 6})]) if markers else []
-        shared_legend(fig, handles=model_handles(cat), fontsize=9, extra=key)
-        written.append(save(fig, ctx.out, f"bsd_clean{suffix}", dpi=220, quiet=ctx.quiet))
-    return written
-
-
-@figure("bsd_clean_summary", group="bubbles", needs=("curves",),
-        help="Wasserstein / mean-MFP bias bars with math stage labels (fno-21cm replot_bubble_size --summary)")
-def bsd_clean_summary(ctx):
-    written = []
-    for suffix, data in _collect(ctx.catalog):
-        stages = _stage_option(ctx, len(data["labels"]))
-        written.append(_bars(ctx, data, stages, stage_title, (13, 4.6), 25, "BSD distribution error",
-                             {"fontsize": 9}, f"bsd_clean_summary{suffix}", dpi=220))
     return written

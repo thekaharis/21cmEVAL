@@ -612,8 +612,7 @@ A ratio ≈ 1 is right; ≪ 1 means mode collapse. Without repeats the entry say
 
 ### `gallery`
 
-Not a score: the truth and prediction slices that `eval21 plot gallery` and `eval21 plot
-deltas` draw. For the first `gallery_samples` samples (or the ids in `gallery_ids`) it keeps
+Not a score: the truth and prediction slices that `eval21 plot gallery` draws. For the first `gallery_samples` samples (or the ids in `gallery_ids`) it keeps
 the slices whose true slice-mean x_HI is nearest each `gallery_stages` level, for every field
 in `gallery_fields` that both the sample and the prediction provide.
 

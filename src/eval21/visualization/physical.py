@@ -679,7 +679,6 @@ def _slice_scores(ctx, target, models):
         return None
     names = [s[0] for s in RMSE_STAGES] + ["overall"]
     pooled = {m: {n: np.zeros(4) for n in names} for m in models}           # ss_res, sum_y, sum_y2, n
-    per_slice = {m: {n: {"rmse": [], "r2": []} for n in names[:-1]} for m in models}
     used = 0
     for sid in _store_samples(ctx):
         t_all = store.truth(sid)
@@ -702,9 +701,6 @@ def _slice_scores(ctx, target, models):
                 if not sel.any():
                     continue
                 pooled[m][name] += [ss[sel].sum(), t_sum[sel].sum(), t_sum2[sel].sum(), n_plane * sel.sum()]
-                per_slice[m][name]["rmse"].extend(np.sqrt(ss[sel] / n_plane).tolist())
-                per_slice[m][name]["r2"].extend(_r2(a, b, c, n_plane) for a, b, c in
-                                                zip(ss[sel], t_sum[sel], t_sum2[sel]))
             pooled[m]["overall"] += [ss.sum(), t_sum.sum(), t_sum2.sum(), n_plane * truth.shape[2]]
     if not used:
         return None
@@ -716,7 +712,7 @@ def _slice_scores(ctx, target, models):
             row[f"{m}_rmse"] = float(np.sqrt(a[0] / a[3])) if a[3] else float("nan")
             row[f"{m}_r2"] = _r2(*a)
         rows.append(row)
-    return rows, per_slice, used
+    return rows, used
 
 
 def _rmse_r2_data(ctx, target):
@@ -724,23 +720,18 @@ def _rmse_r2_data(ctx, target):
     models = cat.models
     store_rows = None if ctx.opt("source", "store") == "curves" else _slice_scores(ctx, target, models)
     if store_rows is not None:
-        rows, per, used = store_rows
-        groups = [s[0] for s in RMSE_STAGES]
-        dist = {m: {g: per[m][g] for g in groups} for m in models}
-        return rows, dist, groups, f"{used} stored samples, all slices; stage = slice-mean true x_HI"
+        rows, used = store_rows
+        return rows, f"{used} stored samples, all slices; stage = slice-mean true x_HI"
     if not cat.has(target, "rmse_per_sample"):
         return None
     row = {"stage": "overall"}
     for m in models:
         row[f"{m}_rmse"], row[f"{m}_r2"] = _pooled_voxel(cat, m, target)
-    group = "overall (per cone)"
-    dist = {m: {group: {"rmse": _pool(cat, m, "rmse_per_sample", target).tolist(),
-                        "r2": _pool(cat, m, "r2_per_sample", target).tolist()}} for m in models}
-    return [row], dist, [group], "voxel metric (no stored cubes: no stages)"
+    return [row], "voxel metric (no stored cubes: no stages)"
 
 
 @figure("rmse_r2", group="physical", needs=("curves",),
-        help="RMSE / R^2 per x_HI stage: bars and per-slice distributions (fno-21cm rmse_r2_comparison/_distributions)")
+        help="RMSE / R^2 per x_HI stage and overall (fno-21cm rmse_r2_comparison)")
 def rmse_r2(ctx):
     cat = ctx.catalog
     plt = pyplot()
@@ -751,7 +742,7 @@ def rmse_r2(ctx):
         data = _rmse_r2_data(ctx, target)
         if data is None:
             continue
-        rows, dist, groups, note = data
+        rows, note = data
         unit = " [mK]" if target == "tb" else ""
         with _quiet():
             labels = [str(r["stage"]) for r in rows]
@@ -771,33 +762,6 @@ def rmse_r2(ctx):
             fig.text(0.995, 0.005, note, ha="right", va="bottom", fontsize=7, color="0.4")
         written.append(save(fig, ctx.out, f"rmse_r2_comparison_{target}", dpi=170, quiet=ctx.quiet))
 
-        with _quiet():
-            fig, axes = plt.subplots(1, 2, figsize=(17, 6), constrained_layout=True)
-            step = n + 1
-            for ax, metric, title in zip(axes, ("rmse", "r2"), (f"RMSE{unit}", "R^2")):
-                positions, values, colors, ticks = [], [], [], []
-                for gi, g in enumerate(groups):
-                    center = gi * step
-                    ticks.append(center)
-                    for i, m in enumerate(models):
-                        v = np.asarray(dist[m][g][metric], float)
-                        v = v[np.isfinite(v)]
-                        positions.append(center + i - (n - 1) / 2)
-                        values.append(v if v.size else [np.nan])
-                        colors.append(cat.color(m))
-                boxes = ax.boxplot(values, positions=positions, widths=0.75, patch_artist=True, showfliers=False)
-                for patch, color in zip(boxes["boxes"], colors):
-                    patch.set_facecolor(color)
-                    patch.set_alpha(0.8)
-                ax.set_xticks(ticks, groups, rotation=25, ha="right")
-                per = "slice" if len(groups) > 1 else "cone"
-                ax.set_title(f"Per-{per} {title} distributions" + ("" if target == "xhi" else f" ({field_name(target)})"))
-                ax.grid(axis="y", alpha=0.25)
-                if metric == "r2":
-                    ax.axhline(0, color="black", linewidth=0.8)
-            shared_legend(fig, handles=model_handles(cat, truth=False, kind="patch"))
-            fig.text(0.995, 0.005, note, ha="right", va="bottom", fontsize=7, color="0.4")
-        written.append(save(fig, ctx.out, f"rmse_r2_distributions_{target}", dpi=170, quiet=ctx.quiet))
     if not written:
         raise SkipFigure("no voxel metric and no stored cubes")
     return written

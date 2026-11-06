@@ -14,6 +14,7 @@ agent needs to work on or consume this repo without re-deriving the session.
 | Collage tool | `docs/readme_collage.py` moved to `src/eval21/visualization/collage.py`; run as a module | `fc16e5f` |
 | Docs | 10 documentation files in `docs/` (~21k words) + generated API reference + generator; this handoff and later design notes are additional | `fc16e5f`, `e60c3e1` |
 | Metrics | `feat/viz-suite` merged: new `dtb`, `front3d`, `survey` metrics and many per-sample arrays | `d22de94` |
+| Figures | deduplicated 43 → 23: one canonical figure per statistic; removed the bubble replots, parity hexbin, 2-D/3-D slice duplicates, the summary dashboard and redundant spectra variants | `609b8b0` |
 | Metric safety | `front3d`/`survey` restricted to x_HI targets; `front3d` marked pointwise | `e60c3e1` |
 | Build branch | `feat/build` recorded as merged with `-s ours`; **its code is not in main** | `8503a9f` |
 | README | `source` column removed from the metrics table | `69da225` |
@@ -46,9 +47,9 @@ from eval21.viz.common import x   from eval21.visualization.common import x
 from eval21.viz import Catalog    from eval21.visualization import Catalog
 ```
 
-The public surface of `eval21.visualization` is unchanged: `Catalog`, `Run`, `find_runs`,
-`PlotContext`, `SkipFigure`, `figure`, `load_all`, `run`, `plot_cylindrical`, `plot_gallery`,
-`plot_deltas`, `plot_summary`.
+The public surface of `eval21.visualization` is `Catalog`, `Run`, `find_runs`,
+`PlotContext`, `SkipFigure`, `figure`, `load_all`, `run`, `plot_cylindrical`, `plot_gallery`.
+The `plot_deltas` and `plot_summary` helpers were removed with the duplicate figures.
 
 Any agent holding a cached import, a patched `eval21.viz` target in tests, or a docs link to
 `eval21/viz/` must update it. The test files are still named `tests/test_viz*.py` (they cover the
@@ -114,7 +115,7 @@ is still `<model>__<metric>__<array>`.
 | `dtb` / `front3d` / `survey` | their own `dtb_*`, `front3d_*`, `survey_*` arrays |
 
 No `eval21 plot` figure consumes `dtb`, `front3d` or `survey` yet; the arrays are the contract for
-anyone who wants to draw them. The figure registry is still 43 figures in 7 groups.
+anyone who wants to draw them. The figure registry is 23 figures in 6 groups.
 
 ## The `feat/build` situation (important)
 
@@ -130,6 +131,30 @@ anyone who wants to draw them. The figure registry is still 43 figures in 7 grou
 If someone wants the npz+manifest builder, it has to be ported deliberately (its 494-line test
 suite lives only on the branch) and given a different command name; it cannot share
 `eval21 build` with the HDF5 implementation. Do not assume the merge brought it in.
+
+## Figure dedupe (43 → 23)
+
+Policy: **one figure per statistic per model and dataset.** Alternate encodings of the same
+quantity were removed; one canonical figure per statistic remains. The registry now has 23
+figures in 6 groups (`bubbles`, `diagnostics`, `ensemble`, `maps`, `physical`, `spectra`).
+
+| statistic | canonical figure | removed |
+|---|---|---|
+| bubble-size PDF | `bubble_size_distribution` | `bsd_clean` |
+| bubble-size W1 / bias | `bubble_size_summary` | `bsd_clean_summary` |
+| parity / calibration | `parity_overlay` | `parity_comparison` |
+| field slices | `gallery` | `comparison_3d`, `multifield_slices`, `slice_comparison`, `representative_z_slices`, `representative_z_compare`, `deltas`, `regression_examples`, `multifield_detailed` |
+| voxel scatter | `scatter_3d` | `slice_scatter` |
+| line-of-sight planes | `multifield_los` | `lightcone_3d`, `lightcone_grid_3d`, `multifield_strips`, `lightcone_animation` |
+| ensemble spread | `ensemble_draws` | `ebm_examples` |
+| transverse P(k) ratio/coherence | `ps_overlay` | `ps_stage_curves` |
+| high-k coherence vs power | `ps_coherence_highk` | `ps_plane3d` |
+| RMSE / R² | `rmse_r2` (bars) | the distributions output of the same figure |
+| cross-model dashboard | — | `summary` (scorecard, spectra, bubbles, history, fronts, EFT/morphology) |
+
+Consequences: `morphology` now has no figure (its numbers remain in `results.json`), and the
+`summary` group is gone. `docs/visualization.md`, the README figure table and the collage cards
+describe the 23-figure set.
 
 ## Files added / moved / removed
 
@@ -154,7 +179,7 @@ Entry point [`docs/index.md`](index.md). Contents:
 `architecture.md` (control flow, package map, object model), `cli.md` (all commands, flags, TOML),
 `data.md` (Sample/Meta, npz/HDF5/cube caches, `eval21 build`, prediction store), `metrics.md`
 (all 20 metrics, keys, settings, caveats), `adapters.md` (all specs, draws, fno-21cm contracts),
-`reports.md` (`results.json`, CSVs, `curves.npz`), `visualization.md` (package API, all 43
+`reports.md` (`results.json`, CSVs, `curves.npz`), `visualization.md` (package API, all 23
 figures, layout conventions, adding figures), `api.md` (generated signatures), `development.md`
 (tests, conventions, extension recipes, release checklist).
 
@@ -168,11 +193,11 @@ python docs/gen_api.py
 
 | check | result |
 |---|---|
-| `pytest -p no:warnings` | **127 passed, 7 skipped** (the 7 need `FNO21CM_ROOT`) |
+| `pytest -p no:warnings` | **128 passed, 7 skipped** (the 7 need `FNO21CM_ROOT`) |
 | `eval21 selftest` | all checks passed |
 | `eval21 demo --out …` | all 20 metrics, report schema `eval21/1` |
 | T_b smoke run (`--target tb`, 2 synthetic cones) | `dtb` produced stage tables; `front3d`/`survey` skipped with `defined for xhi targets, not tb` |
-| `eval21 plot all` | 43 figures, PNG + PDF |
+| `eval21 plot all` | 23 figures, PNG + PDF |
 | `python -m eval21.visualization.collage` | builds a collage from the figure directory |
 | docs links/anchors, markdown tables, `compileall` | clean |
 
@@ -206,8 +231,10 @@ eval21 plot all --run /tmp/demo/results --out /tmp/demo/figs
   `docs/metrics.md` and the README rows, then `python docs/gen_api.py`.
 - **When adding a figure:** it goes in `eval21.visualization`, raise `SkipFigure` when inputs are
   missing, use `shared_legend`/`pane_values`, and update `docs/visualization.md`'s catalogue.
+- **One statistic, one figure.** Do not add a second rendering (clean/replot/hexbin/alternative
+  layout) of a statistic that already has a figure; extend the canonical one instead.
 - **Shared branch discipline:** `main` is published; pull before working, and keep the docs tables
-  in sync with `eval21 plot list` (43) and `eval21 list-metrics` (20).
+  in sync with `eval21 plot list` (23) and `eval21 list-metrics` (20).
 - **Open cleanups:** remote branches `origin/feat/build` and `origin/feat/viz-suite` still exist;
   the 7 skipped reference tests need an fno-21cm checkout at `FNO21CM_ROOT`; there is no figure
   for the three new metrics yet.

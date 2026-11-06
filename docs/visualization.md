@@ -15,7 +15,7 @@ The CLI is unchanged by the package layout: `eval21 plot` is the only entry poin
 figure is a function registered under a short name.
 
 ```text
-eval21 plot cyl maps --run results/ --out figs/ --opt frames=24
+eval21 plot cyl maps --run results/ --out figs/ --opt vmax=0.3
 eval21 plot gallery  --run results/ --out figs/ --ids cone0001,cone0007
 eval21 plot all      --run runA/ runB/ --out figs/ --models ref,tuned --style style.json
 ```
@@ -29,15 +29,14 @@ src/eval21/visualization/
 ├── __init__.py        # public surface: Catalog, Run, find_runs, PlotContext, figure, load_all, run
 ├── registry.py        # @figure decorator, FIGURE_MODULES, PlotContext, SkipFigure
 ├── common.py          # Run/Merged/Catalog, style and label helpers, layout, save
-├── bubbles.py         # bubble_size_distribution, bubble_size_summary, bsd_clean, bsd_clean_summary
+├── bubbles.py         # bubble_size_distribution, bubble_size_summary
 ├── cylindrical.py     # cyl
-├── diagnostics.py     # parity_overlay, parity_comparison, boundary_band_overlay
+├── diagnostics.py     # parity_overlay, boundary_band_overlay
 ├── ensemble.py        # ensemble_calibration, ensemble_draws
-├── maps.py            # 16 slice/lightcone/animation figures from stored cubes
+├── maps.py            # scatter_3d, multifield_los (stored cubes)
 ├── physical.py        # 9 physical-statistics figures (history, PDFs, 21cm, EFT, RMSE, speed, truth)
-├── slices.py          # gallery, deltas
-├── spectra.py         # 7 power-spectrum figures
-├── summary.py         # summary (7 output files)
+├── slices.py          # gallery
+├── spectra.py         # 5 power-spectrum figures
 └── collage.py         # docs/collage.png builder (Pillow; python -m eval21.visualization.collage)
 ```
 
@@ -116,7 +115,7 @@ class PlotContext:
     def opt(self, key, default=None, cast=None): ...
 ```
 
-`ctx.opt("frames", 48, int)` is the canonical way to read a figure option.
+`ctx.opt("vmax", 0.4, float)` is the canonical way to read a figure option.
 
 ## The figure registry
 
@@ -130,7 +129,7 @@ def ps_overlay(ctx: PlotContext) -> list[Path]:
 | attribute | meaning |
 |---|---|
 | `name` | the string used on the command line; duplicates raise |
-| `group` | `bubbles`, `diagnostics`, `ensemble`, `maps`, `physical`, `spectra`, `summary` |
+| `group` | `bubbles`, `diagnostics`, `ensemble`, `maps`, `physical`, `spectra` |
 | `needs` | `("curves",)` (default) or `("store",)`; a store figure is skipped without a store |
 | `help` | one line shown by `eval21 plot list` |
 
@@ -144,20 +143,21 @@ reasons; `all` hides the routine "needs stored cubes" noise.
 
 ## Figures
 
-Each figure is registered once and may write several files (a summary page, per-sample pages,
-a CSV side-car). Output stems below are relative to `--out`; `*` marks a target, field, model
-or sample suffix.
+One statistic, one figure. Each figure may write several files (a per-sample page, a CSV
+side-car), but there is no second rendering of the same statistic under a different name: the
+legacy replots, the 2-D/3-D duplicates of the same slice diagnostics, and the summary dashboard
+that repeated the dedicated figures were removed. The registry has **23 figures in 6 groups**.
+
+Output stems below are relative to `--out`; `*` marks a target, field, model or sample suffix.
 
 ### bubbles
 
-Bubble-size distributions from the `bubble` metric's mean-free-path samples.
+Bubble-size statistics from the `bubble` metric's mean-free-path samples.
 
 | figure | needs | output | content |
 |---|---|---|---|
-| `bubble_size_distribution` | results | `bubble_size_distribution[_g*].png` | PDF per stage, truth vs models with 16–84 % bands |
+| `bubble_size_distribution` | results | `bubble_size_distribution[_g*].png` | PDF per stage, truth vs models with 16–84 % bands and underflow/censored markers |
 | `bubble_size_summary` | results | `bubble_size_summary[_g*].png` | per-stage restricted Wasserstein and mean-MFP bias bars |
-| `bsd_clean` | results | `bsd_clean[_g*].png` | central curves only, no bands (`--opt stat=mean\|med`, `--opt ncols=`) |
-| `bsd_clean_summary` | results | `bsd_clean_summary[_g*].png` | Wasserstein / bias bars with math stage labels |
 
 ### diagnostics
 
@@ -165,8 +165,7 @@ Calibration and front diagnostics.
 
 | figure | needs | output | content |
 |---|---|---|---|
-| `parity_overlay` | results | `parity_overlay.png` | E[pred x_HI \| true x_HI] with 16–84 % band and bin occupancy |
-| `parity_comparison` | store | `parity_comparison.png` | hexbin of predicted vs true x_HI per model, log counts (`--opt voxels=`) |
+| `parity_overlay` | results | `parity_overlay[_<group>].png` | E[pred x_HI \| true x_HI] with 16–84 % band and bin occupancy |
 | `boundary_band_overlay` | results | `boundary_band_overlay.png` | RMSE, mean x_HI (front width) and gradient error vs distance to the true front |
 
 ### ensemble
@@ -180,29 +179,15 @@ Stochastic and generative models (`--draws N`).
 
 ### maps
 
-Slice, lightcone and animation figures. The *store* figures need cubes written by
-`--save-predictions`; `gallery` and `deltas` need only the `gallery` metric's slices in
-`curves.npz`. A figure whose inputs are absent is skipped with a reason.
+Field visualisations. `gallery` works from the `gallery` metric's slices in `curves.npz`; the
+other two need the prediction store. One figure per view: transverse slices (`gallery`), voxel
+scatter (`scatter_3d`), line-of-sight planes (`multifield_los`).
 
 | figure | output (under `--out/`) | content |
 |---|---|---|
 | `gallery` | `gallery/cone_<id>.png` | stages × (x_HI \| T_b): truth / models / residuals, slice RMSE per panel |
-| `deltas` | `deltas/cone_<id>_deltas.png`, `deltas/overview_deltas[_N].png` | prediction − truth per stage; overview at x̄_HI ≈ 0.4 for every sample |
-| `comparison_3d` | `comparison_3d/comparison_3d_cone<id>_<field>.png` | z-slice rows: density \| truth \| prediction \| pred − true (`--opt slices=`, `--opt detailed=1`) |
-| `lightcone_3d` | `lightcone_3d/lightcone_3d_cone<id>_<field>.png` | edge-on x–z strip at y = Ny/2 |
-| `scatter_3d` | `scatter_3d/scatter_3d_cone<id>_<field>.png` | voxel hexbin of truth vs prediction, R² / RMSE |
-| `lightcone_grid_3d` | `lightcone_grid_3d/lightcone_grid_3d_<field>.png` | one x–z row per sample, sorted by ⟨x_HI⟩ at z = 7 (`--opt cones=`, `--opt stratify_z=`) |
-| `multifield_slices` | `multifield_slices/cone<id>_<field>_slices.png` | transverse slices at active redshifts (`--opt slices=`) |
-| `multifield_los` | `multifield_los/cone<id>_<field>_los.png` | LOS (x, z) planes, cropped to the active band (`--opt full_z=1`) |
-| `multifield_strips` | `multifield_strips/…` | stacked full-LOS strips per field (`--opt per_figure=`, `strip_height=`, `y_frac=`) |
-| `multifield_detailed` | `multifield_detailed/cone<id>_<field>_<model>.png` | x–z slices, maps, error vs z, parity, histogram, P_perp, r(k) |
-| `lightcone_animation` | `lightcone_animation/…gif` (or `.mp4`) | transverse slices stepping through z (`--opt frames=48`, `animate_n=1`, `fps=`, `dpi=`); GIF needs Pillow, MP4 needs ffmpeg |
-| `slice_comparison` | `slice_comparison/comparison_<field>.png` | four slices spread over all stored slices (`--opt slices=`) |
-| `slice_scatter` | `slice_scatter/scatter_<field>.png` | hexbin over 32 stored slices (`--opt n_scatter=`) |
-| `representative_z_slices` | `representative_z_slices/representative_z_slices_<field>.png` | slices at z quantiles, truth / models / errors with RMSE and MAE |
-| `representative_z_compare` | `representative_z_compare/representative_z_predictions_<field>.png`, `…_errors_<field>.png` | truth and every model at z quantiles, plus the signed-error page |
-| `ebm_examples` | `ebm_examples/examples_<model>.png` | rhizome examples: δ \| truth, draws, ensemble mean/std (`--opt draws_shown=`, `stage=`) |
-| `regression_examples` | `regression_examples/regression_examples_<model>_<field>.png` | log density \| truth \| prediction \| error (`--opt stage=`) |
+| `scatter_3d` | `scatter_3d/scatter_3d_cone<id>_<field>.png` | voxel hexbin of truth vs prediction, one panel per model, R² / RMSE |
+| `multifield_los` | `multifield_los/cone<id>_<field>_los.png` | LOS (x, z) planes at several y, cropped to the active band (`--opt full_z=1`, `--opt slices=`) |
 
 ### physical
 
@@ -215,30 +200,25 @@ Physical statistics and model-scale summaries.
 | `physical_21cm` | results | `physical_21cm.png` | 21-cm power, Δ² vs x_HI, dT_b moments, power-bias significance |
 | `physical_eft` | results | `physical_eft_<target>.png` | EFT transfer, stochasticity, correlation, per-cone fits |
 | `physical_3d` | store | `physical_3d/physical_3d_<target>_<id>.png` | per sample: global field vs z, 3-D power, cross-correlation |
-| `rmse_r2` | results | `rmse_r2_comparison_<target>.png`, `rmse_r2_distributions_<target>.png` | RMSE / R² per stage: bars and per-slice distributions |
+| `rmse_r2` | results | `rmse_r2_comparison_<target>.png` | RMSE / R² per stage and overall, bars per model |
 | `params_vs_accuracy` | results | `params_vs_accuracy_<target>.png` | parameters vs R² and vs RMSE with a Pareto front (`--opt point_labels=1`) |
 | `inference_speed` | results | `inference_speed_vs_rmse_<target>.png`, `inference_speed_vs_size_<target>.png` | throughput vs RMSE and parameters vs throughput |
 | `truth_sharpness_survey` | store | `truth_sharpness_survey.png`, `.json` | truth voxel population, partial fraction, front width, TV vs slice x_HI |
 
 ### spectra
 
-Power-spectrum figures.
+Power-spectrum figures. Ratio and coherence are separate statistics: `cyl` shows the
+cylindrical ratio error, `ps_cyl_r` the cylindrical coherence, `ps_overlay` the transverse
+ratio/coherence at the active stage, `ps_coherence_highk` the high-k coherence/power relation,
+and `cyl_anisotropy_decomposition` the k_par/k_perp decomposition of the cylindrical error.
 
 | figure | needs | output | content |
 |---|---|---|---|
 | `cyl` | results | `cyl_error_<target>.png` | P_pred/P_true − 1 over (k_perp, k_par), white dead band, rows = models |
 | `ps_overlay` | results | `ps_overlay_<target>.png` | active-stage Δ²(k), ratio and r(k) per model |
-| `ps_stage_curves` | results | `ps_stage_curves_<target>.png` | per model: ratio and r(k) per stage |
 | `ps_cyl_r` | results | `ps_cyl_r_<target>.png` | coherence r(k_perp, k_par), rows = models |
-| `cyl_anisotropy_decomposition` | results | `cyl_anisotropy_decomposition_<target>.png` | k_par / k_perp marginals plus the advantage map; needs ≥ 2 models |
-| `ps_coherence_highk` | results | `ps_coherence_highk_<target>.png` | coherence r(k) vs small-scale power fidelity, placement/amount plane (`--opt point_labels=1`) |
-| `ps_plane3d` | results | `ps_plane3d_<target>.png`, `.csv` | small-scale r(k>1) vs \|ratio − 1\| (k>1), active stage (`--opt point_labels=1`) |
-
-### summary
-
-| figure | needs | output | content |
-|---|---|---|---|
-| `summary` | results | `summary_scorecard`, `summary_per_sample_rmse`, `summary_spectra_<target>`, `summary_bubbles`, `summary_history`, `summary_fronts`, `summary_eft_morphology`, `summary_scorecard.json` | comparative pages over models, pooled over groups |
+| `cyl_anisotropy_decomposition` | results | `cyl_anisotropy_decomposition_<target>.png`, `.csv` | k_par / k_perp marginals plus the advantage map; needs ≥ 2 models |
+| `ps_coherence_highk` | results | `ps_coherence_highk_<target>.png`, `.csv` | coherence r(k) vs small-scale power fidelity, placement/amount plane |
 
 ## Options
 
@@ -249,22 +229,13 @@ The common options:
 |---|---|---|
 | `vmax=X` | `cyl` | colour saturation (also `--vmax`) |
 | `dead=X` | `cyl` | white dead band (also `--dead`) |
-| `frames=N`, `animate_n=N`, `fps=N`, `dpi=N` | `lightcone_animation` | animation length and quality |
-| `slices=N` | `comparison_3d`, `multifield_slices`, `multifield_los`, `slice_comparison` | number of slices |
-| `cones=N`, `stratify_z=1` | `lightcone_grid_3d` | samples shown, and whether rows are stratified in z |
+| `slices=N` | `multifield_los` | LOS planes per sample |
 | `full_z=1` | `multifield_los` | show the whole LOS instead of the active band |
-| `per_figure=1`, `strip_height=`, `y_frac=` | `multifield_strips` | strip layout |
-| `n_scatter=N` | `slice_scatter` | slices used in the hexbin |
-| `draws_shown=N`, `stage=` | `ebm_examples`, `regression_examples` | draws per sample, stage selection |
-| `stat=mean\|med` | `bsd_clean` | central curve statistic (default `mean`) |
-| `ncols=N` | `bsd_clean` | columns of the stage grid |
-| `stages=0,2,5` | `bsd_clean`, `bsd_clean_summary` | subset of stage panels |
-| `markers=0` | bubble figures | drop the underflow / censored markers |
-| `format=gif\|mp4` | `lightcone_animation` | output container (default `gif`) |
-| `quantiles=0.05,0.5,0.95` | `representative_z_slices`, `representative_z_compare` | z quantiles shown |
+| `source=store\|curves` | `rmse_r2` | use per-slice scores from stored cubes, or the per-cone curves |
+| `cyl_source=cylindrical\|anisotropy` | `ps_cyl_r`, `cyl_anisotropy_decomposition` | source of the cylindrical maps |
+| `model=NAME`, `zbin=K` | `cyl_anisotropy_decomposition` | focus model and chunk column |
+| `highk_k_min=X` | `ps_coherence_highk` | high-k cutoff, cycles/pixel |
 | `point_labels=1` | scatter figures | also write the model name next to each point |
-| `detailed=1` | `comparison_3d` | use the active-z slice picker instead of evenly spaced slices |
-| `voxels=N` | `parity_comparison` | voxels sampled for the hexbin |
 
 ## Layout conventions
 

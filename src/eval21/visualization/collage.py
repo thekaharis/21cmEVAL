@@ -15,7 +15,7 @@ CANVAS = (2800, 1750)
 #        file (glob, first match)          width  centre x  centre y  angle
 CARDS = [("cyl_error_tb.png",              1080,   0.28,     0.30,    -5.0),
          ("bubble_size_distribution.png",   920,   0.74,     0.29,     4.5),
-         ("ps_stage_curves_tb.png",         720,   0.78,     0.70,    -3.5),
+         ("ps_overlay_tb.png",              720,   0.78,     0.70,    -3.5),
          ("physical_pdfs.png",             1140,   0.34,     0.71,     2.5),
          ("gallery/cone_*.png",            1300,   0.53,     0.47,    -1.0),
          ("parity_overlay*.png",            430,   0.635,    0.76,     5.5)]

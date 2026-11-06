@@ -24,12 +24,13 @@ matplotlib and pytest are optional extras.
 | `test_data.py` | 8 | npz/manifest/synthetic readers, splits, selection |
 | `test_hdf5.py` | 11 | fno-21cm HDF5 layouts, lazy indexing, `--indices-json` |
 | `test_metrics.py` | 26 | every metric family on analytic or synthetic fields |
+| `test_npz_target_name.py` | 2 | manifest target naming, stage-field x_HI |
 | `test_physics.py` | 16 | τ_e, crossings, dT_b, binning, W1/JS, ray tracing, fronts |
 | `test_reference_agreement.py` | 6 | bit-level agreement with fno-21cm (needs `FNO21CM_ROOT`) |
 | `test_runner.py` | 17 | one-pass loop, skips, geometry checks, report writers, CLI |
 | `test_viz*.py` | 26 | registry, layout helpers, spectra, bubbles, diagnostics, maps, ensembles |
 
-On a machine with numpy, scipy, matplotlib and h5py: **127 passed, 7 skipped**. The skipped
+On a machine with numpy, scipy, matplotlib and h5py: **128 passed, 7 skipped**. The skipped
 tests are the fno-21cm reference-agreement cases, which require a checkout:
 
 ```bash
@@ -198,7 +199,7 @@ synchronise CUDA, discard warmup). `close()` is called between models. See
 ## Release checklist
 
 ```bash
-python -m pytest -p no:warnings           # 127 passed, 7 skipped
+python -m pytest -p no:warnings           # 128 passed, 7 skipped
 eval21 selftest
 eval21 demo --out /tmp/eval21-demo
 eval21 plot list | wc -l                  # groups + figures, as documented

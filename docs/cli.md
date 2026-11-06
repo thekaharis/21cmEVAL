@@ -33,7 +33,7 @@ floats, then as a comma-separated tuple of strings. So:
 --set stage_edges=0.02,0.2,0.4,0.6,0.8,0.98
 --set n_k_bins=20
 --set gallery_ids=cone0001,cone0007
---opt frames=24 --opt full_z=1
+--opt vmax=0.3 --opt full_z=1
 ```
 
 **Settings precedence.** Explicit CLI flag > TOML value > default. `--target` and `--density`
@@ -205,7 +205,7 @@ Draw figures from one or more result directories. This command is documented in 
 eval21 plot list                                    # registry: name, group, needs, help
 eval21 plot all --run results/ --out figs/
 eval21 plot cyl maps --run results/ --out figs/      # groups or individual figures
-eval21 plot gallery --run results/ --out figs/ --opt frames=24
+eval21 plot gallery --run results/ --out figs/ --title "LoReLi II test"
 ```
 
 | option | meaning |
@@ -217,7 +217,7 @@ eval21 plot gallery --run results/ --out figs/ --opt frames=24
 | `--opt KEY=VALUE` | figure option (repeatable) |
 | `--models a,b` | subset and order of models (default: all complete models) |
 | `--style FILE` | JSON `{model: {"label": ..., "color": ..., "ls": ...}}` |
-| `--ids a,b` | sample ids for gallery/deltas figures |
+| `--ids a,b` | sample ids for the gallery figure |
 | `--title TEXT` | data-set name used in figure titles |
 | `--vmax X` | cylindrical maps: colour saturation (same as `--opt vmax=X`) |
 | `--dead X` | cylindrical maps: white dead band (same as `--opt dead=X`) |

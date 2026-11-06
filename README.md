@@ -288,7 +288,7 @@ truth and prediction are always paired. `active` is the last row: slices with
 | `radial` | isotropic 3-D P(k) ratio and coherence (cross-check; non-periodic LOS) |
 | `anisotropy` | cylindrical (k_perp, k_par) power ratio and coherence at z = 7/9/11 |
 | `cylindrical` | full cylindrical (k_perp, k_par) power ratio and coherence maps per sample, LOS chunks at ionization stages (default x̄_HI 0.9/0.7/0.5/0.3/0.1) or fixed z, share of resolved cells within ±0.1, native-resolution limits; drawn by `eval21 plot cyl` |
-| `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `eval21 plot gallery` / `deltas` |
+| `gallery` | not a score: truth/prediction slices at x̄_HI 0.8/0.6/0.4/0.2 for a few samples, for `eval21 plot gallery` |
 | `survey` | not a score: partial fractions, transverse/LOS total variation, band width per TV, voxel histogram of truth and prediction |
 | `efficiency` | parameters, ms per lightcone (median/p16/p84), samples/s, slices/s, peak memory |
 | `ensemble` | with `--draws N`: CRPS, spread/skill, rank histogram and coverage (voxels), PIT calibration of x̄(z), history and Δ²(k) per stage, cosmic-variance comparison |
@@ -336,7 +336,7 @@ group. An x_HI and a T_b run of the same samples combine in the gallery.
 ```bash
 eval21 plot list                                   # every figure, its group and what it needs
 eval21 plot all --run results/ --out figs/ [--models ref,tuned] [--style style.json] [--title "LoReLi II test"]
-eval21 plot spectra maps --run results/ --out figs/ --opt frames=24      # groups or single figures
+eval21 plot spectra maps --run results/ --out figs/ --opt vmax=0.3      # groups or single figures
 ```
 
 Every figure is a function registered with `@figure(name, group=..., needs=...)` in
@@ -350,58 +350,36 @@ waveforms, gate mechanisms, training curves) are not part of an evaluation libra
 
 | group | figure | needs | content |
 |---|---|---|---|
-| bubbles | `bubble_size_distribution` | results | MFP bubble-size PDF per stage, truth vs models with 16-84% bands (fno-21cm bubble_size_evaluation) |
-| bubbles | `bubble_size_summary` | results | per-stage restricted Wasserstein distance and mean-MFP bias bars (fno-21cm bubble_size_evaluation) |
-| bubbles | `bsd_clean` | results | MFP bubble-size PDFs, central curves only, no bands (fno-21cm replot_bubble_size) |
-| bubbles | `bsd_clean_summary` | results | Wasserstein / mean-MFP bias bars with math stage labels (fno-21cm replot_bubble_size --summary) |
-| diagnostics | `parity_overlay` | results | binned parity plot E[pred x_HI | true x_HI] with 16-84% band and bin occupancy (fno-21cm parity_diagnostic) |
-| diagnostics | `parity_comparison` | store | hexbin of predicted vs true x_HI per model, log counts (fno-21cm compare_xhi2d_to_3d plot_parity) |
-| diagnostics | `boundary_band_overlay` | results | RMSE, mean x_HI (front width) and gradient error vs distance to the true front (fno-21cm boundary_band_diagnostic) |
+| bubbles | `bubble_size_distribution` | results | MFP bubble-size PDF per stage, truth vs models with 16–84 % bands |
+| bubbles | `bubble_size_summary` | results | per-stage restricted Wasserstein distance and mean-MFP bias bars |
+| diagnostics | `parity_overlay` | results | binned parity plot E[pred x_HI | true x_HI] with 16–84 % band and bin occupancy |
+| diagnostics | `boundary_band_overlay` | results | RMSE, mean x_HI (front width) and gradient error vs distance to the true front |
 | ensemble | `ensemble_calibration` | results | rank histogram, PIT histograms, coverage vs nominal, spread/skill per stage |
 | ensemble | `ensemble_draws` | store | truth, ensemble mean/std and draws at the gallery stages, per stored sample |
-| maps | `gallery` | results | per-sample gallery: stages x (x_HI | T_b) truth / models / residuals |
-| maps | `deltas` | results | prediction - truth per stage, per sample, plus overview pages |
-| maps | `comparison_3d` | store | z-slice rows per sample: density | truth | prediction | pred - true per model |
-| maps | `lightcone_3d` | store | edge-on x-z lightcone strip at y = Ny/2: density, truth, prediction, pred - true |
-| maps | `scatter_3d` | store | voxel hexbin of truth vs prediction per sample, one panel per model, R^2 / RMSE |
-| maps | `lightcone_grid_3d` | store | one x-z strip row per sample (sorted by <x_HI> at z = 7): truth | prediction | pred - true |
-| maps | `multifield_slices` | store | transverse slices at the active redshifts: truth / predictions / pred - truth rows |
-| maps | `multifield_los` | store | line-of-sight (x, z) planes at several y, cropped to the active band (--opt full_z=1) |
-| maps | `multifield_strips` | store | stacked full-LOS lightcone strips per field: truth / predictions / errors per sample |
-| maps | `multifield_detailed` | store | per sample/field/model page: x-z slices, maps, error vs z, parity, histogram, P_perp, r(k) |
-| maps | `lightcone_animation` | store | GIF of transverse slices stepping through z, truth and each model (--opt frames=, animate_n=) |
-| maps | `slice_comparison` | store | 4 slices spread over all stored slices: density | truth | prediction | pred - true per model |
-| maps | `slice_scatter` | store | hexbin of truth vs prediction over 32 stored slices, one panel per model, R^2 / RMSE |
-| maps | `representative_z_slices` | store | slices at z quantiles (local-median mean): truth | predictions | errors with RMSE / MAE |
-| maps | `representative_z_compare` | store | truth and every model at z quantiles, plus the signed-error page |
-| maps | `ebm_examples` | store | rhizome examples: per model, rows of samples: delta | truth, draws, ensemble mean / std per field |
-| maps | `regression_examples` | store | rhizome regression_examples: rows of samples: log density | truth | prediction | error |
-| physical | `physical_history` | results | history error band, tau / Planck histogram, midpoint and duration (fno-21cm physical_history) |
-| physical | `physical_pdfs` | results | stage-resolved PDFs of x_HI and dT_b with W1 (fno-21cm physical_pdfs) |
-| physical | `physical_21cm` | results | 21-cm power, Delta^2 vs x_HI, dT_b moments, power-bias significance (fno-21cm physical_21cm) |
-| physical | `physical_eft` | results | EFT transfer, stochasticity, correlation and per-cone bias fits (fno-21cm physical_eft) |
-| physical | `physical_3d` | store | per-sample page: global field vs z, 3-D power, cross-correlation (fno-21cm physical_3d_*_cone*) |
-| physical | `rmse_r2` | results | RMSE / R^2 per x_HI stage: bars and per-slice distributions (fno-21cm rmse_r2_comparison/_distributions) |
-| physical | `params_vs_accuracy` | results | model size (parameters) vs R^2 and vs RMSE with Pareto front (fno-21cm params_vs_accuracy) |
-| physical | `inference_speed` | results | throughput vs RMSE and parameters vs throughput (fno-21cm inference_speed_vs_rmse/_vs_size) |
-| physical | `truth_sharpness_survey` | store | truth x_HI survey: voxel population, partial fraction, front width, TV vs slice x_HI (fno-21cm) |
-| spectra | `cyl` | results | cylindrical P_pred/P_true - 1 maps (white dead band), rows = models |
-| spectra | `ps_overlay` | results | active-stage Delta^2(k), P_pred/P_true and r(k) per model (fno-21cm ps_overlay) |
-| spectra | `ps_stage_curves` | results | per model: P_pred/P_true and r(k) per reionization stage (fno-21cm ps_stage_curves) |
-| spectra | `ps_cyl_r` | results | coherence r(k_perp, k_par), rows = models (fno-21cm ps_cyl_r) |
-| spectra | `cyl_anisotropy_decomposition` | results | cylindrical error split into k_par / k_perp marginals + advantage map (fno-21cm) |
-| spectra | `ps_coherence_highk` | results | coherence r(k) vs small-scale power fidelity, with the placement/amount plane (fno-21cm) |
-| spectra | `ps_plane3d` | results | small-scale coherence r(k>1) vs |P_pred/P_true - 1| (k>1), active stage (rhizome ps_plane3d) |
-| summary | `summary` | results | scorecard, per-sample RMSE, spectra, bubbles, history, fronts, EFT/morphology |
+| maps | `gallery` | results | per-sample gallery: stages × (x_HI | T_b) truth / models / residuals |
+| maps | `scatter_3d` | store | voxel hexbin of truth vs prediction per sample, one panel per model, R² / RMSE |
+| maps | `multifield_los` | store | line-of-sight (x, z) planes at several y, cropped to the active band (`--opt full_z=1`) |
+| physical | `physical_history` | results | history error band, τ / Planck histogram, midpoint and duration |
+| physical | `physical_pdfs` | results | stage-resolved PDFs of x_HI and dT_b with W1 |
+| physical | `physical_21cm` | results | 21-cm power, Δ² vs x_HI, dT_b moments, power-bias significance |
+| physical | `physical_eft` | results | EFT transfer, stochasticity, correlation and per-cone bias fits |
+| physical | `physical_3d` | store | per-sample page: global field vs z, 3-D power, cross-correlation |
+| physical | `rmse_r2` | results | RMSE / R² per x_HI stage and overall (bars) |
+| physical | `params_vs_accuracy` | results | model size (parameters) vs R² and vs RMSE with Pareto front |
+| physical | `inference_speed` | results | throughput vs RMSE and parameters vs throughput |
+| physical | `truth_sharpness_survey` | store | truth x_HI survey: voxel population, partial fraction, front width, TV vs slice x_HI |
+| spectra | `cyl` | results | cylindrical P_pred/P_true − 1 maps (white dead band), rows = models |
+| spectra | `ps_overlay` | results | active-stage Δ²(k), P_pred/P_true and r(k) per model |
+| spectra | `ps_cyl_r` | results | coherence r(k_perp, k_par), rows = models |
+| spectra | `cyl_anisotropy_decomposition` | results | cylindrical error split into k_par / k_perp marginals + advantage map |
+| spectra | `ps_coherence_highk` | results | coherence r(k) vs small-scale power fidelity, with the placement/amount plane |
 
-The original quick-reference for the first four:
+The two map/spectrum figures with the most files:
 
 | kind | files | content |
 |---|---|---|
 | `cyl` | `cyl_error_<target>` | P_pred/P_true − 1 over (k_perp, k_par) on log axes, white within ±`cyl_dead_band`, rows = models, columns = stages (or z); median over samples; hatched beyond the truth's native resolution, not counted |
 | `gallery` | `gallery/cone_<id>` | per stage: x_HI truth/models/model − truth (viridis, RdBu), then T_b (magma), slice RMSE per panel |
-| `deltas` | `deltas/cone_<id>_deltas`, `overview_deltas` | prediction − truth per stage (red: too neutral); overview at x̄_HI ≈ 0.4 for every sample |
-| `summary` | `summary_scorecard`, `summary_per_sample_rmse`, `summary_spectra_<target>`, `summary_bubbles`, `summary_history`, `summary_fronts`, `summary_eft_morphology`, `summary_scorecard.json` | comparative figures over models, pooled exactly over groups (voxel-weighted MSE, count-weighted fronts, medians with 16–84 % bands) |
 
 `--style` is a JSON file `{"model": {"label": "...", "color": "...", "ls": "--"}}`; by default the
 first model is drawn dark grey dashed (the baseline) and the others in distinct colours.

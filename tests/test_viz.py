@@ -181,11 +181,10 @@ def test_plot_all_on_synthetic_runs(tmp_path):
     assert main(["plot", "all", "--run", str(tmp_path / "run"), "--run", str(tmp_path / "run_extra"),
                  "--out", str(tmp_path / "figs"), "--quiet"]) == 0
     with pytest.raises(SystemExit):                                       # the same metric twice is ambiguous
-        main(["plot", "summary", "--run", str(tmp_path / "run"), "--run", str(tmp_path / "run"),
+        main(["plot", "cyl", "--run", str(tmp_path / "run"), "--run", str(tmp_path / "run"),
               "--out", str(tmp_path / "figs2"), "--quiet"])
     made = {p.name for p in (tmp_path / "figs").rglob("*.png")}
-    assert {"cyl_error_xhi.png", "summary_scorecard.png", "summary_spectra_xhi.png", "cone_c0.png",
-            "cone_c0_deltas.png", "overview_deltas.png"} <= made
+    assert {"cyl_error_xhi.png", "rmse_r2_comparison_xhi.png", "cone_c0.png"} <= made
     from eval21.visualization.slices import cone_name
     assert cone_name("cone12316") == "12316" == cone_name("cone_12316") and cone_name("c0") == "c0"
 

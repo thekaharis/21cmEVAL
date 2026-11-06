@@ -136,63 +136,6 @@ def parity_overlay(ctx):
 
 
 # ----------------------------------------------------------------------------------------------- #
-# legacy/xhi2d/compare_xhi2d_to_3d.py
-# ----------------------------------------------------------------------------------------------- #
-def _stored_xhi(store, model, sid):
-    pred = store.prediction(model, sid)
-    if TARGET in pred:
-        return pred[TARGET]
-    draws = pred.get(f"{TARGET}__draws")
-    return None if draws is None else draws[0]
-
-
-@figure("parity_comparison", group="diagnostics", needs=("store",),
-        help="hexbin of predicted vs true x_HI per model, log counts (fno-21cm compare_xhi2d_to_3d plot_parity)")
-def parity_comparison(ctx):
-    plt = pyplot()
-    cat, store = ctx.catalog, ctx.store
-    models = [m for m in cat.models if m in store.models]
-    if not models:
-        raise SkipFigure("no catalog model has stored predictions")
-    ids = [str(i) for i in (ctx.ids or store.samples) if str(i) in store.samples]
-    truths, preds = [], {m: [] for m in models}
-    for sid in ids:
-        truth = store.truth(sid)["targets"].get(TARGET)
-        if truth is None:
-            continue
-        cubes = {m: _stored_xhi(store, m, sid) for m in models}
-        if any(c is None or c.shape != truth.shape for c in cubes.values()):
-            continue
-        truths.append(truth.ravel())
-        for m in models:
-            preds[m].append(cubes[m].ravel())
-    if not truths:
-        raise SkipFigure("no stored sample has x_HI truth and every model's x_HI prediction")
-    flat_truth = np.concatenate(truths)
-    rng = np.random.default_rng(42)
-    count = min(int(ctx.opt("voxels", 300_000)), len(flat_truth))
-    indices = rng.choice(len(flat_truth), size=count, replace=False)
-    n = len(models)
-    fig, axes = plt.subplots(1, n, figsize=(16 / 3 * max(n, 1) + (0.6 if n == 1 else 0), 5),
-                             constrained_layout=True, squeeze=False)
-    for axis, m in zip(axes[0], models):
-        flat_pred = np.concatenate(preds[m])
-        rendered = axis.hexbin(flat_truth[indices], flat_pred[indices], gridsize=75, bins="log", mincnt=1,
-                               cmap="magma")
-        axis.plot([0, 1], [0, 1], "w--", linewidth=1)
-        axis.set_xlim(0, 1)
-        axis.set_ylim(0, 1)
-        axis.set_aspect("equal")
-        axis.set_xlabel("truth $x_{HI}$")
-        axis.set_ylabel("prediction $x_{HI}$")
-        axis.set_title(cat.label(m))
-        fig.colorbar(rendered, ax=axis, label="log count")
-    if ctx.title:
-        fig.suptitle(ctx.title)
-    return [save(fig, ctx.out, "parity_comparison", dpi=170, quiet=ctx.quiet)]
-
-
-# ----------------------------------------------------------------------------------------------- #
 # boundary_band_diagnostic.py / edge_metrics_xhi2d.py
 # ----------------------------------------------------------------------------------------------- #
 def _front_profile(cat, m):
