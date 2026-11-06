@@ -14,7 +14,7 @@ agent needs to work on or consume this repo without re-deriving the session.
 | Collage tool | `docs/readme_collage.py` moved to `src/eval21/visualization/collage.py`; run as a module | `fc16e5f` |
 | Docs | 10 documentation files in `docs/` (~21k words) + generated API reference + generator; this handoff and later design notes are additional | `fc16e5f`, `e60c3e1` |
 | Metrics | `feat/viz-suite` merged: new `dtb`, `front3d`, `survey` metrics and many per-sample arrays | `d22de94` |
-| Figures | deduplicated 43 → 23: one canonical figure per statistic; removed the bubble replots, parity hexbin, 2-D/3-D slice duplicates, the summary dashboard and redundant spectra variants | `609b8b0` |
+| Figures | deduplicated 43 → 23: one canonical figure per statistic; removed the bubble replots, parity hexbin, 2-D/3-D slice duplicates, the summary dashboard and redundant spectra variants | `9806084` |
 | Metric safety | `front3d`/`survey` restricted to x_HI targets; `front3d` marked pointwise | `e60c3e1` |
 | Build branch | `feat/build` recorded as merged with `-s ours`; **its code is not in main** | `8503a9f` |
 | README | `source` column removed from the metrics table | `69da225` |
