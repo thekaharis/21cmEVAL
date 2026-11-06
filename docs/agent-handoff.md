@@ -18,7 +18,7 @@ agent needs to work on or consume this repo without re-deriving the session.
 | Metric safety | `front3d`/`survey` restricted to x_HI targets; `front3d` marked pointwise | `e60c3e1` |
 | Build branch | `feat/build` recorded as merged with `-s ours`; **its code is not in main** | `8503a9f` |
 | README | `source` column removed from the metrics table | `69da225` |
-| Run output | **`eval21 run` writes one `eval21-run/1` HDF5 file per model** (`<model>.<target>.h5`); `--legacy-dir` keeps the old directory; optional `eval21-cache/1` via `--cache`; `eval21 validate` | `__HASH__` |
+| Run output | **`eval21 run` writes one `eval21-run/1` HDF5 file per model** (`<model>.<target>.h5`); `--legacy-dir` keeps the old directory; optional `eval21-cache/1` via `--cache`; `eval21 validate` | `b11d1b6` |
 
 `main` is clean and pushed; no worktrees or uncommitted files remain.
 
