@@ -1,61 +1,22 @@
-"""Power-spectrum figures: transverse P(k) per stage, cylindrical coherence maps,
-coherence vs small-scale power planes.
+"""Power-spectrum figures.
 
-Ports of fno-21cm's ``viz/power_spectrum_evaluation.py``, ``viz/ps_coherence_highk.py`` and
-``viz/cyl_anisotropy_decomposition.py`` and of rhizome-neural-operator's ``ebm21cm/ps_plane3d.py``
-(same layouts, axes, colour maps, colour limits, reference lines and labels). One file per target
-(``<figure>_xhi``, ``<figure>_tb``); every model of the catalog is drawn (catalog labels, colours
-and line styles; the first model is the reference). Per-sample curves are pooled over the groups
-of a target and summarized by the median and the 16-84 % band, as the originals did over cones.
+``ps_overlay`` (active-stage Delta^2(k), ratio and coherence), ``ps_cyl_r`` (cylindrical
+coherence maps), ``cyl`` (cylindrical ratio error, in ``cylindrical.py``),
+``cyl_anisotropy_decomposition`` (k_par / k_perp marginals and the advantage map) and
+``ps_coherence_highk`` (coherence r(k) vs small-scale power fidelity). One file per target;
+every model of the catalog is drawn (catalog labels, colours, line styles; the first model is
+the reference). Per-sample curves are pooled over the groups of a target and summarized by the
+median and the 16-84 % band, as the originals did over cones.
 
-============================  ===============================================  ==============================================  ======
-figure                        ports                                            shows                                           needs
-============================  ===============================================  ==============================================  ======
-ps_overlay                    power_spectrum_evaluation.plot_overlay           active-stage Delta^2(k_perp) truth vs models,    curves
-                              (``ps_overlay.png``)                             P_pred/P_true (log y, grey +-5 % band) and
-                                                                               coherence r(k_perp) (label: k where r < 0.9)
-ps_stage_curves               power_spectrum_evaluation.plot_stage_curves      per model (rows): ratio(k) and r(k) per          curves
-                              (``ps_stage_curves.png``)                        reionization stage (viridis)
-ps_cyl_r                      power_spectrum_evaluation.plot_cylindrical_maps  coherence r(k_perp, k_par), viridis,             curves
-                              (``ps_cyl_r.png``)                               vmin = min(0.9, 2nd pct), vmax = 1
-cyl_anisotropy_decomposition  cyl_anisotropy_decomposition.main                amplitude |log10 ratio| and decoherence 1 - r:   curves
-                                                                               marginals over k_perp / k_par per model and the
-                                                                               focus model's advantage map over the worst
-                                                                               other model, with the two-way variance split
-                                                                               (k_par / k_perp / residual); + csv
-ps_coherence_highk            ps_coherence_highk.main                          r(k) and P_pred/P_true vs k in cycles/pixel      curves
-                                                                               (dotted: highk cutoff) and the plane mean
-                                                                               r(k >= cutoff) vs highk log-MSE; + csv
-ps_plane3d                    ebm21cm.ps_plane3d.main                          small-scale coherence r(k > 1/Mpc) vs            curves
-                                                                               |P_pred/P_true - 1| (k > 1/Mpc), active stage,
-                                                                               one point per model; + csv
-============================  ===============================================  ==============================================  ======
-
-Data. Transverse curves come from the ``spectrum`` metric (``curves.npz``: per-sample ratio,
-coherence and Delta^2 per stage, ``spectrum_highk_logmse``). Cylindrical maps come from the
-``cylindrical`` metric (per-sample ``cyl_ratio`` / ``cyl_coherence``; columns are its chunks,
-at ionization stages or fixed redshifts -- ``cyl_z_centers=7,9,11`` with
-``cyl_chunk_cells=32`` reproduces the fno-21cm chunks); ``--opt cyl_source=anisotropy`` uses
-the ``anisotropy`` metric's fixed-z median ratio maps instead (ratio only: that metric does not
-export coherence maps). The ``cyl`` figure (``viz/cylindrical.py``, P_pred/P_true - 1 with a
-white dead band) is a different look and stays separate.
-
-Generative runs (``--mode generative``) drop the coherence from ``results.json``; the coherence
-curves, maps and points of such models are left out.
-
-Options (``--opt key=value``): ``cyl_source`` (cylindrical | anisotropy), ``model`` (focus model
-of cyl_anisotropy_decomposition, default: the first), ``zbin`` (its chunk column, default: the
-middle one), ``highk_k_min`` (cycles/pixel, default: the run's ``highk_k_min``), ``plane_kmin``
-(1/Mpc, default 1), ``note`` and ``legend_loc`` (footnote / legend place of ps_plane3d).
-
-Not ported: fno-21cm ``viz/los_grid_evaluation.py`` (a round-trip test of LOS sampling grids for
-the cube cache on native 2340-slice lightcones; it involves no model and writes only tables).
+Data. Transverse curves come from the ``spectrum`` metric; cylindrical maps come from the
+``cylindrical`` metric (``--opt cyl_source=anisotropy`` uses the ``anisotropy`` metric's
+fixed-z median ratio maps instead; ratio only). Generative runs drop the coherence, so those
+curves and maps are left out.
 """
 from __future__ import annotations
 
 import csv
 import warnings
-from pathlib import Path
 
 import numpy as np
 

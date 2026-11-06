@@ -20,12 +20,9 @@ physical_eft                   ``plot_eft`` (``physical_eft.png``)              
 physical_3d                    viz/visualize_3d.py                              per sample: global field vs z, 3-D P(k) (grid units),     store
 (``physical_3d/physical_3d_``  ``plot_physical_diagnostics``                    Fourier cross-correlation (one curve per model)
 ``<target>_<id>``)             (``physical_3d_<split>_cone<id>.png``)
-rmse_r2_comparison             legacy/xhi2d/compare_xhi2d_to_3d.py              RMSE and R^2 bars per reionization stage + overall        store (else
+rmse_r2                        legacy/xhi2d/compare_xhi2d_to_3d.py              RMSE and R^2 bars per reionization stage + overall        store (else
 (``..._<target>``)             ``plot_metrics``                                                                                           curves:
                                (``rmse_r2_comparison.png``)                                                                               overall only)
-rmse_r2_distributions          ``plot_metric_distributions``                    per-slice RMSE / R^2 box plots per stage                  store (else
-(``..._<target>``)             (``rmse_r2_distributions.png``)                                                                            curves:
-                                                                                                                                          per cone)
 params_vs_accuracy             viz/plot_params_vs_accuracy.py                   model size vs R^2 / RMSE with Pareto front                curves
 (``params_vs_accuracy_`` /     (``params_vs_accuracy.png``,                                                                               (efficiency
 ``params_vs_rmse_<target>``)   ``params_vs_rmse.png``)                                                                                    parameters,
@@ -52,7 +49,6 @@ from __future__ import annotations
 import json
 import warnings
 from contextlib import contextmanager
-from pathlib import Path
 
 import numpy as np
 
@@ -141,12 +137,6 @@ def _one_to_one(ax, *arrays):
         lo, hi = float(values.min()), float(values.max())
         pad = 0.05 * (hi - lo or 1.0)
         ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "k:", lw=0.8)
-
-
-def _nanmedian(values) -> float:
-    values = np.asarray(values, dtype=np.float64).ravel()
-    values = values[np.isfinite(values)]
-    return float(np.median(values)) if values.size else float("nan")
 
 
 def _k_axis(cat, target):
@@ -765,27 +755,6 @@ def rmse_r2(ctx):
     if not written:
         raise SkipFigure("no voxel metric and no stored cubes")
     return written
-
-
-# --------------------------------------------------------------------------------------------- #
-# plot_params_vs_accuracy.py / plot_inference_speed.py
-# --------------------------------------------------------------------------------------------- #
-def _best_legend_loc(xs, ys) -> str:
-    """Corner with the fewest points, preferring the one furthest from any point (original helper)."""
-    if not xs:
-        return "lower right"
-    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-    nx = [(x - x0) / (x1 - x0) if x1 > x0 else 0.5 for x in xs]
-    ny = [(y - y0) / (y1 - y0) if y1 > y0 else 0.5 for y in ys]
-    boxes = {"lower left": (0.00, 0.40, 0.00, 0.34), "lower right": (0.60, 1.00, 0.00, 0.34),
-             "upper left": (0.00, 0.40, 0.66, 1.00), "upper right": (0.60, 1.00, 0.66, 1.00)}
-    scored = []
-    for loc, (bx0, bx1, by0, by1) in boxes.items():
-        inside = sum(1 for a, b in zip(nx, ny) if bx0 <= a <= bx1 and by0 <= b <= by1)
-        cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
-        clearance = min(((a - cx) ** 2 + (b - cy) ** 2) ** 0.5 for a, b in zip(nx, ny))
-        scored.append((inside, -clearance, loc))
-    return min(scored)[2]
 
 
 def _style(ax, minor=True):

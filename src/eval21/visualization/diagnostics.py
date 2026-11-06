@@ -1,37 +1,9 @@
-"""Diagnostic figures: calibration (parity) and error near the ionization fronts.
+"""Calibration and front diagnostics.
 
-Ports of fno-21cm's x_HI diagnostics.
-
-=====================  ===============================================  ========================================================  =======
-figure                 original                                         shows                                                     needs
-=====================  ===============================================  ========================================================  =======
-parity_overlay         fno-21cm ``viz/parity_diagnostic.py``            binned parity plot: per true-x_HI bin (50 on [0, 1]) the  curves
-                       ``plot_parity``                                  median (solid), mean (dotted) and 16-84 % band of the
-                                                                        prediction against the identity line; voxel occupancy
-                                                                        per bin (log) underneath
-parity_comparison      fno-21cm ``legacy/xhi2d/compare_xhi2d_to_3d.py``  one hexbin panel per model of predicted vs true x_HI     store
-                       ``plot_parity``                                  (300 000 random voxels of the stored samples, log count,
-                                                                        magma, white dashed identity)
-boundary_band_overlay  fno-21cm ``viz/boundary_band_diagnostic.py``     three panels vs signed distance to the true front         curves
-                       ``plot_overlay`` (also drawn by                  (2-D transverse, - ionized / + neutral): RMSE per voxel,
-                       ``viz/edge_metrics_xhi2d.py`` as                 mean x_HI with 10-90 % front widths under the panel and
-                       ``edge_band_overlay``)                           title, RMS in-plane gradient error
-=====================  ===============================================  ========================================================  =======
-
-Data: ``parity_overlay`` reads the ``parity`` metric (same 50 x 400 histogram construction as the
-original); ``boundary_band_overlay`` the ``front`` metric's distance profiles (``front_*`` in
-``curves.npz``; 1.5 Mpc bins to +-30 Mpc by default, as the original). Both are x_HI figures, as
-the originals (the ``parity`` metric clips T_b to [0, 1], so T_b runs are not drawn).
-
-Differences to the originals: models, labels and colours come from the catalog (the original used
-the matplotlib colour cycle); model lines of ``boundary_band_overlay`` take the catalog line style.
-``parity_overlay`` percentiles cannot be pooled across groups (data sets), so with several groups
-one file per group is written (``parity_overlay_<group>``); ``boundary_band_overlay`` pools the
-profiles of all groups weighted by voxel counts and computes the 10-90 % widths from the pooled
-profiles. ``parity_comparison`` reads the stored prediction (the scored draw for generative
-models) and accepts ``--ids`` and ``--opt voxels=300000``. The CSV / bootstrap side outputs of the
-originals are not figures and are covered by ``results.json`` (``front.bands``,
-``parity.bins``).
+``parity_overlay`` draws the binned parity relation E[pred x_HI | true x_HI] with its 16-84 %
+band and bin occupancy from the ``parity`` metric. ``boundary_band_overlay`` draws RMSE, mean
+x_HI (10-90 front width) and gradient error versus signed distance to the true front from the
+``front`` metric. Both are x_HI figures; a T_b run skips them.
 """
 from __future__ import annotations
 

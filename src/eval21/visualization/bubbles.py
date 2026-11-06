@@ -1,38 +1,11 @@
-"""Bubble-size figures: transverse mean-free-path (MFP) ionized-bubble size distributions.
+"""Bubble-size figures fed by the ``bubble`` metric.
 
-Ports of fno-21cm's bubble-size evaluation figures, fed by the ``bubble`` metric (per-stage
-histogram of MFP distances on the metric's log radius bins, ``curves.npz``
-``bubble_mass_{truth,pred}_<stage>`` per sample; per-stage medians of W1, bias, underflow and
-censored fractions in ``results.json``). Only x_HI runs carry the metric.
-
-=========================  ================================================  ======================================================  =======
-figure                     original                                          shows                                                   needs
-=========================  ================================================  ======================================================  =======
-bubble_size_distribution   fno-21cm ``viz/bubble_size_evaluation.py``        3-column grid, one panel per stage (5 x_HI stages +     curves
-                           ``plot_distributions``                            "active"): mean probability per log bin vs MFP
-                                                                             distance (log x), 16-84 % band over samples, truth
-                                                                             black; v / ^ markers at the first / last edge for
-                                                                             "no ionized pixels" / "censored at box length"
-bubble_size_summary        ``bubble_size_evaluation.py`` ``plot_summary``    grouped bars per stage: median restricted Wasserstein   curves
-                                                                             distance [cMpc] and restricted mean-MFP bias [%]
-bsd_clean                  fno-21cm ``viz/replot_bubble_size.py`` ``main``   the distribution grid redrawn without bands (mean or    curves
-                                                                             median curves only, "21cmFAST truth", math stage
-                                                                             titles, y from 0); readable with many models
-bsd_clean_summary          ``replot_bubble_size.py`` ``plot_summary``        the Wasserstein / bias bars with math stage labels      curves
-=========================  ================================================  ======================================================  =======
-
-Options (``--opt``): ``stat=mean|med`` (central curve of ``bsd_clean``, default ``mean``),
-``stages=0,2,5`` (panels of ``bsd_clean`` / ``bsd_clean_summary``), ``markers=0`` (drop the
-underflow / censored markers), ``ncols=3``.
-
-Differences to the originals, all forced by what ``eval21 run`` records: models come from the
-catalog (labels, colours; model lines use the catalog line style, the reference model dashed);
-the underflow / censored markers are the per-stage **medians** over samples (the metric stores no
-per-sample fractions, so the mean curve of ``bubble_size_distribution`` is paired with median
-markers); the bar heights are the metric's per-stage medians. With several groups (data sets) of
-one target the mass curves are pooled over all samples of all groups, and the marker / bar values
-are the sample-count-weighted mean of the per-group medians. Groups with different radius bins
-(different box or ``max_distance_mpc``) are drawn into separate files ``<name>_g<i>``.
+One figure per statistic: the mean-free-path bubble-size PDF per stage
+(``bubble_size_distribution``: 16-84 % bands, underflow / censored markers) and the per-stage
+restricted Wasserstein distance and mean-size bias bars (``bubble_size_summary``). Only x_HI
+runs carry the metric. With several groups (data sets) of one target the curves are pooled;
+groups with different radius bins (different box or ``max_distance_mpc``) are written to
+``<name>_g<i>``.
 """
 from __future__ import annotations
 

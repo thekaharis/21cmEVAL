@@ -1,72 +1,13 @@
-"""Map, slice and lightcone figures from stored cubes (ports of fno-21cm / rhizome viz scripts).
+"""Map figures from stored cubes.
 
-Every figure reads the prediction store (``eval21 run --save-predictions DIR``), draws each target
-field that the truth holds and every shown model predicted (x_HI and/or T_b), and works for any
-number of models: where an original drew one prediction, each catalog model gets its own
-prediction (and error) panel, in catalog order, labelled with the catalog label. x_HI is drawn in
-viridis on [0, 1] everywhere; T_b keeps the original script's colour map (inferno in the
-fno-21cm multi-field scripts, magma in ``multifield_detailed``, RdBu_r in rhizome's ``examples``).
-Errors are prediction - truth in RdBu_r (red: prediction too high / too neutral).
-
-=========================  ==================================================  ==========================================  =====
-figure                     ports                                               shows                                       needs
-=========================  ==================================================  ==========================================  =====
-comparison_3d              fno-21cm viz/visualize_3d.py ``plot_z_slices``      per sample/field: rows of z-slices;         store
-                           (``comparison_3d_<split>_cone<id>``); with          density | truth | per model prediction,
-                           ``--opt detailed=1`` visualize_3d_detailed.py       pred - true (MSE); active-z picker and
-                                                                               low-z crop in detailed mode
-lightcone_3d               visualize_3d.py ``plot_lightcone_strip``            per sample/field: edge-on x-z strip at      store
-                           (``lightcone_3d_<split>_cone<id>``)                 y = Ny/2 over the LOS: density, truth,
-                                                                               per model prediction and pred - true
-scatter_3d                 visualize_3d.py ``plot_scatter``                    per sample/field: voxel hexbin truth vs     store
-                           (``scatter_3d_<split>_cone<id>``)                   prediction, one panel per model, R^2/RMSE
-lightcone_grid_3d          visualize_3d.py ``plot_lightcone_summary_grid``     per field: one row per sample (sorted by    store
-                           (``lightcone_grid_3d_<split>``)                     <x_HI> at z = 7): truth | prediction |
-                                                                               pred - true strips
-multifield_slices          viz/multifield_slices.py ``figure``                 per sample/field: transverse slices at the  store
-                           (``cone<id>_<field>_slices``)                       active redshifts; truth / predictions /
-                                                                               pred - truth rows, RMSE per column
-multifield_los             multifield_slices.py ``los_figure``                 per sample/field: (x, z) planes at several  store
-                           (``cone<id>_<field>_los``)                          y, cropped to the active band
-multifield_strips          viz/multifield_lightcone_strips.py ``build``        per field: stacked full-LOS strips, groups  store
-                           (``<field>_strips[_active][_partN]``)               of truth / predictions / errors per sample
-                                                                               on a common colour scale
-multifield_detailed        viz/multifield_detailed.py ``page``                 per sample/field/model: x-z slice triptych, store
-                           (``cone<id>_<field>``)                              transverse maps, error vs z, parity,
-                                                                               error histogram, P_perp ratio, r(k_perp)
-lightcone_animation        viz/animate_lightcone.py ``animate``                GIF (or MP4) of transverse slices stepping  store
-                           (``cone<id>_lightcone[_compare].gif``)              through z: truth and each model, per field
-slice_comparison           viz/visualize_xhi2d.py ``plot_comparison``          per field: 4 slices spread over all stored  store
-                           (``comparison_<split>``)                            (sample, z) slices; density | truth |
-                                                                               prediction | pred - true per model
-slice_scatter              visualize_xhi2d.py ``plot_scatter``                 per field: hexbin over 32 stored slices,    store
-                           (``scatter_<split>``)                               one panel per model, R^2/RMSE
-representative_z_slices    viz/visualize_xhi2d_representative.py               per field: slices at z quantiles (local-    store
-                           ``render_slices`` (``representative_z_slices``)     median x_HI); truth | predictions | errors
-                                                                               with RMSE/MAE
-representative_z_compare   viz/compare_xhi2d_models.py ``plot_predictions``    per field: truth and every model at z       store
-                           (``representative_z_predictions`` / ``_errors``)    quantiles, plus the signed-error page
-ebm_examples               rhizome ebm21cm/viz.py ``examples``                 per model: rows of samples (slice at        store
-                                                                               x_HI ~ 0.5): delta | per field truth,
-                                                                               draws, ensemble mean, ensemble std
-regression_examples        rhizome ebm21cm/viz.py ``regression_examples``      per model/field: rows of samples: log       store
-                                                                               density | truth | prediction | error
-=========================  ==================================================  ==========================================  =====
-
-Options (``--opt key=value``): ``slices`` (comparison_3d / multifield rows), ``detailed=1``
-(comparison/lightcone/scatter/grid: active-z slices and shared low-z crop),
-``zmin=auto|<z>`` (crop), ``stratify_z`` (grid ranking, 7.0), ``cones`` (grid rows),
-``crop=1`` / ``y_frac`` / ``per_figure`` / ``error=0`` (strips), ``full_z=1`` (los),
-``frames`` / ``fps`` / ``dpi`` / ``format=gif|mp4`` / ``animate_n`` (animation, default 1 sample,
-48 frames), ``quantiles`` (representative), ``stage`` (examples, 0.5), ``draws_shown`` (2).
-
-Not ported: z_re maps (``visualize_zre_detailed.py``: the store holds 3-D fields only, no z_re
-map); ``physical_3d`` diagnostics and ``metrics_comparison`` bars (statistics, other modules);
-rhizome ``spectra`` / ``bubble_sizes`` (statistics) and ``energy_gaps`` (model internal).
+Two views, one figure each: ``scatter_3d`` (voxel hexbin of truth vs prediction per sample,
+one panel per model, R^2 / RMSE) and ``multifield_los`` (line-of-sight x-z planes at several
+y, cropped to the active band). Both need the prediction store written by
+``eval21 run --save-predictions``. x_HI is drawn in viridis on [0, 1], T_b in inferno; errors
+are prediction - truth in RdBu_r (red: too neutral / too high).
 """
 from __future__ import annotations
 
-import re
 
 import numpy as np
 

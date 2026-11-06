@@ -1,15 +1,10 @@
-"""Slice figures from the ``gallery`` metric: per-sample galleries and prediction - truth pages.
+"""The per-sample gallery from the ``gallery`` metric.
 
-``plot_gallery`` is rhizome-neural-operator's ``ebm21cm.compare_cones3d`` page: a row per
-ionization stage; x_HI truth, each model, each model - truth, then the same for T_b when the runs
-provide it. x_HI in viridis on [0, 1], T_b in magma on the truth's 1-99.5 % range per row,
-residuals in RdBu_r (x_HI +-1, T_b symmetric 99 % of the largest model residual per row), slice
-RMSE in each model panel. ``plot_deltas`` is ``ebm21cm.delta_slices``: per sample a row per stage
-(truth, then each model's prediction - truth, red: too neutral), and an overview page with the
-x_HI ~ 0.4 slice of every sample.
-
-Fields are merged across runs by sample id (an x_HI pass and a T_b pass with the true x_HI as
-input give both blocks); truth must agree between models.
+Rows are ionization stages; x_HI truth, each model, each model - truth, then the same for T_b
+when the runs provide it. x_HI is viridis on [0, 1], T_b magma on the truth's 1-99.5 % range,
+residuals RdBu_r (x_HI +-1, T_b symmetric 99 % of the largest model residual per row); slice
+RMSE sits in each model panel. Fields are merged across runs by sample id (an x_HI pass and a
+T_b pass with the true x_HI as input give both blocks); truth must agree between models.
 """
 from __future__ import annotations
 
