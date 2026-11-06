@@ -1,14 +1,16 @@
 # Visualization
 
 All plotting lives in one package, `eval21.visualization` (`src/eval21/visualization/`). It
-turns result directories into the figures of the fno-21cm and rhizome evaluations: statistics
-figures read `results.json` and `curves.npz`, map figures read the prediction store written by
-`eval21 run --save-predictions`.
+turns run files (and legacy result directories) into the figures of the fno-21cm and rhizome
+evaluations: statistics figures read `eval21-run/1` files (or `results.json` + `curves.npz`),
+map figures read the cube cache written by `eval21 run --cache` (or the legacy prediction
+store).
 
 ```bash
 python -m pip install -e ".[viz]"         # matplotlib
 eval21 plot list                          # every figure, its group and what it needs
 eval21 plot all --run results/ --out figs/
+eval21 plot all --run results/fno.xhi.h5 --out figs/      # a single run file
 ```
 
 The CLI is unchanged by the package layout: `eval21 plot` is the only entry point, and every
@@ -47,9 +49,11 @@ src/eval21/visualization/
 
 ### `Run`
 
-One `eval21 run` output directory: `results.json` plus optional `curves.npz`. It exposes
-`settings`, `target`, `data`, `n_samples`, `models`, `group`, `metric(model, name)` and
-`curves(model)`.
+One run: an `eval21-run/1` file (or a legacy directory with `results.json` plus optional
+`curves.npz`). `Run` opens either through `eval21.io.open_run` and exposes `settings`, `target`,
+`data`, `n_samples`, `models`, `group`, `metric(model, name)` and `curves(model)`. A run file
+holds one model; `models` is `[model]`. Its curves come from `/metrics/*/arrays`, so the figure
+code is identical for files and directories.
 
 `Run.group` is a short label for the data a run scored: the manifest's directory name, or the
 data path's name. It is what distinguishes redshift groups of the same target.
@@ -73,8 +77,8 @@ catalog.label(m), .color(m), .ls(m), .tick(m)
 catalog.pooled(model, "rmse_per_sample", target="xhi")   # concatenated over groups
 ```
 
-`find_runs` accepts result directories or trees: a directory without `results.json` is searched
-recursively for it. A model must have results for **every** target and group to be shown;
+`find_runs` accepts run files, legacy directories, and trees of either: a directory is searched
+recursively for `results.json` and for `*.h5` files whose root attr is `eval21-run/1`. A model must have results for **every** target and group to be shown;
 incomplete models are printed as `incomplete (skipped): [...]` and left out. With no
 `--models` filter, all complete models are used.
 
@@ -179,8 +183,8 @@ Stochastic and generative models (`--draws N`).
 
 ### maps
 
-Field visualisations. `gallery` works from the `gallery` metric's slices in `curves.npz`; the
-other two need the prediction store. One figure per view: transverse slices (`gallery`), voxel
+Field visualisations. `gallery` works from the `gallery` metric's slices in the run file (or
+legacy `curves.npz`); the other two need the cube cache. One figure per view: transverse slices (`gallery`), voxel
 scatter (`scatter_3d`), line-of-sight planes (`multifield_los`).
 
 | figure | output (under `--out/`) | content |
@@ -317,10 +321,10 @@ what exists — keep this document's tables in sync with it.
 | `no model has results for every target and group` | models differ across runs; use `--models` to pick a complete subset, or re-run the missing target |
 | `incomplete (skipped): [...]` | as above, but some models are dropped automatically |
 | `metric 'x' of model 'y' on <data> is in both …` | two runs for the same target/data/model report the same metric; merge or remove one |
-| `skipped: needs stored cubes (run with --save-predictions)` | map figures need `eval21 run --save-predictions DIR`; `plot` looks for `predictions/` next to the results or takes `--store` |
+| `skipped: needs stored cubes` | map figures need `eval21 run --cache PATH` (or the legacy `--save-predictions DIR`); `plot` looks for `predictions/` and `*.cache.h5` near the runs, or takes `--store` |
 | `skipped: no model was run with --draws N` | `ensemble_calibration` needs an `ensemble` metric |
 | `skipped: needs at least two models` | `cyl_anisotropy_decomposition` compares models |
-| `no 21cmEVAL results under <path>` | `--run` must point at a directory containing `results.json` or a tree of them |
+| `no 21cmEVAL results under <path>` | `--run` must point at a run file, a legacy directory, or a tree containing either |
 | empty figures with one model and many targets | every model must exist in every target; run the second target or filter with `--models` |
 | `ModuleNotFoundError: matplotlib` | `pip install -e ".[viz]"` |
 

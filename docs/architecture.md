@@ -17,13 +17,13 @@ nothing about training frameworks.
                     └──────┬───────┘
                            │ {target: ndarray}  (+ draws when --draws)
                     ┌──────▼───────┐        ┌───────────────────────┐
-                    │   runner     │───────▶│ PredictionStore       │  --save-predictions
+                    │   runner     │───────▶│ cache (eval21/io)     │  --cache
                     │eval21.runner │        │ float16 cubes         │
                     └──────┬───────┘        └───────────┬───────────┘
                            │ per-metric dicts           │
                     ┌──────▼───────┐                    │
-                    │   report     │  results.json / summary.csv / stages.csv /
-                    │eval21.report │  report.md / curves.npz
+                    │ io/runfile   │  <model>.<target>.h5 (eval21-run/1)      │
+                    │ report       │  legacy: results.json, CSVs, curves.npz   │
                     └──────┬───────┘                    │
                            │                            │
                     ┌──────▼────────────────────────────▼──────┐
@@ -40,7 +40,7 @@ sweep with one; the metrics differ only in the numpy work after `predict`.
 
 **Constant memory.** Accumulators are sums, histograms, per-slice arrays and per-sample scalars.
 No metric keeps a cube after `update` returns. The exceptions are opt-in and bounded: the
-`gallery` metric keeps a handful of slices (`gallery_samples`), and `--save-predictions` writes
+`gallery` metric keeps a handful of slices (`gallery_samples`), and `--cache` writes
 selected cubes to disk rather than holding them.
 
 **Numpy core, optional extras.** `import eval21` imports numpy only (scipy is imported lazily
@@ -77,7 +77,7 @@ and the optional cube store; it never recomputes a metric.
      `--draws`) → validate the prediction → optional x↔y re-run for `symmetry` → update every
      metric → optionally save cubes to the store → time the forward pass;
    - after the pass, runs the adapter's dedicated `benchmark()` if it has one, merges the
-     post-loop `describe()` info, and collects `metric.arrays()` for `curves.npz`;
+     post-loop `describe()` info, and collects `metric.arrays()` for the run file (or `curves.npz`);
    - closes the adapter (frees GPU memory between models).
 4. `report.write` serialises the payload, flattens scalars to CSV, builds the long-form stage
    table and renders the Markdown report.

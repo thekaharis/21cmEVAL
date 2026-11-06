@@ -29,6 +29,12 @@ class ModelResult:
     arrays: dict = field(default_factory=dict)
     seconds: float = 0.0
     n_samples: int = 0
+    #: id/split/omega_m/params/z_grid for every evaluated sample (for the run file).
+    samples: list = field(default_factory=list)
+    #: redshift grid of the run (all samples share it).
+    z_grid: object = None
+    #: needs/targets/pointwise of every built metric (for /metrics/<name>/meta).
+    metric_meta: dict = field(default_factory=dict)
 
 
 def evaluate(adapter, dataset, settings: Settings,
@@ -39,12 +45,12 @@ def evaluate(adapter, dataset, settings: Settings,
              store=None, model_name: str = "model") -> ModelResult:
     """Run one adapter over ``dataset`` and return per-metric results.
 
-    ``store`` (a :class:`~eval21.store.PredictionStore`) keeps the truth and prediction cubes of the
-    samples it wants, under ``model_name``, for map figures."""
+    ``store`` (a :class:`~eval21.store.PredictionStore` or
+    :class:`~eval21.io.cache.CacheWriter`) keeps the truth and prediction cubes of the samples it
+    wants, under ``model_name``, for map figures."""
     from .metrics import Metric  # noqa: F401  (registers built-ins)
 
     names = _resolve_names(metric_names)
-    available = registry.available()
     metrics = registry.build(names, settings, metric_options)
 
     iterator = iter(dataset)
@@ -84,6 +90,7 @@ def evaluate(adapter, dataset, settings: Settings,
     total = len(dataset) if hasattr(dataset, "__len__") else None
     geometry = None
     benchmark_pool = []
+    sample_rows = []
     try:
         for sample in itertools.chain([first], iterator):
             check_targets(sample)
@@ -138,6 +145,13 @@ def evaluate(adapter, dataset, settings: Settings,
                                       draws=1 if draws is None else draws.shape[0])
             if len(benchmark_pool) < settings.benchmark_samples:
                 benchmark_pool.append(sample)
+            sample_rows.append({
+                "id": str(sample.id),
+                "split": sample.split,
+                "omega_m": sample.meta.omega_m,
+                "params": dict(sample.meta.params or {}),
+                "z_grid": sample.meta.z_grid,
+            })
             n_samples += 1
             if progress is not None:
                 progress(n_samples, total, sample.id)
@@ -183,9 +197,19 @@ def evaluate(adapter, dataset, settings: Settings,
     finally:
         if hasattr(adapter, "close"):
             adapter.close()
+    metric_meta = {
+        metric.name: {
+            "needs": list(metric.needs),
+            "targets": None if metric.targets is None else list(metric.targets),
+            "pointwise": metric.pointwise,
+        }
+        for metric in usable
+    }
     return ModelResult(
         name="", info=info, metrics=results, skipped=skipped, arrays=arrays,
         seconds=time.perf_counter() - started, n_samples=n_samples,
+        samples=sample_rows, z_grid=None if not sample_rows else sample_rows[0]["z_grid"],
+        metric_meta=metric_meta,
     )
 
 

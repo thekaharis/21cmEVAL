@@ -69,9 +69,18 @@ def main(argv=None) -> int:
                      help="generative: skip voxel-by-voxel metrics and pointwise keys (r, IoU, RMSE)")
     run.add_argument("--score-draw", choices=["first", "mean"], default=None,
                      help="what the standard metrics score with --draws: one draw or the ensemble mean")
+    run.add_argument("--legacy-dir", action="store_true",
+                     help="write the legacy results/ directory (results.json, curves.npz) "
+                          "instead of one eval21-run/1 HDF5 file per model")
+    run.add_argument("--overwrite", action="store_true",
+                     help="replace existing run files / cache entries")
+    run.add_argument("--cache", type=Path, default=None, metavar="PATH",
+                     help="optional HDF5 inference cache for cubes; a directory gets "
+                          "<target>.cache.h5, a .h5 path is used directly "
+                          "(default: no cubes are stored)")
     run.add_argument("--save-predictions", type=Path, default=None, metavar="DIR",
-                     help="store truth and prediction cubes of some samples for map figures "
-                          "(default: the first --save-n samples)")
+                     help="legacy prediction store directory (or an .h5 path for the new "
+                          "cache); stores the first --save-n samples")
     run.add_argument("--save-n", type=int, default=8, help="samples to store (default 8; 0 = all)")
     run.add_argument("--save-ids", default=None, help="comma list of sample ids to store instead")
     run.add_argument("--quiet", action="store_true")
@@ -128,8 +137,9 @@ def main(argv=None) -> int:
     plot.add_argument("--run", action="append", default=[], type=Path,
                       help="result directory or a tree of them (repeatable)")
     plot.add_argument("--out", type=Path, default=None)
-    plot.add_argument("--store", type=Path, default=None,
-                      help="prediction store (default: a 'predictions' directory next to the results)")
+    plot.add_argument("--store", action="append", default=[], type=Path,
+                      help="prediction store or .h5 cache (repeatable; default: 'predictions' "
+                           "directories and *.cache.h5 next to the results)")
     plot.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE",
                       help="figure option (repeatable), e.g. --opt vmax=0.5")
     plot.add_argument("--models", default=None, help="comma list and order of models (default: all)")
@@ -140,6 +150,11 @@ def main(argv=None) -> int:
     plot.add_argument("--vmax", type=float, default=None, help="cyl: colour saturation (same as --opt vmax=)")
     plot.add_argument("--dead", type=float, default=None, help="cyl: white band (same as --opt dead=)")
     plot.add_argument("--quiet", action="store_true")
+
+    validate = sub.add_parser("validate", help="check eval21-run/1 files")
+    validate.add_argument("files", nargs="+", type=Path)
+    validate.add_argument("--strict", action="store_true",
+                          help="also check that every dataset appears in /manifest")
 
     args = parser.parse_args(argv)
     if args.command == "plot":
@@ -156,6 +171,8 @@ def main(argv=None) -> int:
         return selftest.run()
     if args.command == "demo":
         return _demo(args)
+    if args.command == "validate":
+        return _validate(args)
     parser.error(f"unknown command {args.command}")
     return 2
 
@@ -201,6 +218,9 @@ def _run(args) -> int:
         models[name] = spec
     if not models:
         raise SystemExit("no models: pass --model NAME=SPEC or [models]")
+    if (not getattr(args, "legacy_dir", False) and out.suffix.lower() in {".h5", ".hdf5"}
+            and len(models) > 1):
+        raise SystemExit("a single .h5 --out holds one model; pass a directory or one --model")
 
     settings_values = dict(config.get("settings", {}))
     for item in args.set:
@@ -261,36 +281,81 @@ def _run(args) -> int:
                   "to reuse a checkpoint's test split.")
         print(f"metrics {', '.join(registry.available()) if names == ['all'] else ', '.join(names)}")
 
+    legacy = bool(getattr(args, "legacy_dir", False))
+    overwrite = bool(getattr(args, "overwrite", False))
+    save_path = getattr(args, "save_predictions", None)
+    cache_path = getattr(args, "cache", None)
+    if save_path is not None and cache_path is not None and Path(save_path) != Path(cache_path):
+        raise SystemExit("use --cache or --save-predictions, not both")
+    cache_target = cache_path or save_path
+    save_ids = [i.strip() for i in args.save_ids.split(",")] if args.save_ids else None
+    save_n = None if args.save_n == 0 else args.save_n
+
     store = None
-    if getattr(args, "save_predictions", None) is not None:
+    cache = None
+    if cache_target is not None and Path(cache_target).suffix.lower() in {".h5", ".hdf5"}:
+        from .io.cache import CacheWriter
+        cache_path = Path(cache_target)
+        cache = CacheWriter(cache_path, ids=save_ids, n=save_n, overwrite=overwrite)
+        store = cache
+    elif cache_path is not None:
+        from .io.cache import CacheWriter
+        cache_path = Path(cache_path) / f"{target}.cache.h5"
+        cache = CacheWriter(cache_path, ids=save_ids, n=save_n, overwrite=overwrite)
+        store = cache
+    elif save_path is not None:
         from .store import PredictionStore
-        save_ids = [i.strip() for i in args.save_ids.split(",")] if args.save_ids else None
-        store = PredictionStore(args.save_predictions, ids=save_ids, n=None if args.save_n == 0 else args.save_n)
+        store = PredictionStore(save_path, ids=save_ids, n=save_n)
+
+    h5_out = (not legacy) and out.suffix.lower() in {".h5", ".hdf5"}
+    if h5_out and len(models) > 1:
+        raise SystemExit("a single .h5 --out holds one model; pass a directory or one --model")
+    if not legacy and not h5_out:
+        out.mkdir(parents=True, exist_ok=True)
+
+    from .io.runfile import default_path, write_run
 
     results = []
-    for name, spec in models.items():
-        if not args.quiet:
-            print(f"\n[{name}] {spec}")
-        adapter = adapters.build(spec, fno_root=fno_root, device=device,
-                                 target=target)
-        if expect_shape is not None and hasattr(adapter, "expect_shape"):
-            adapter.expect_shape = expect_shape
-        result = evaluate(
-            adapter, dataset, settings, names, options,
-            progress=None if args.quiet else _progress(name),
-            expect_shape=expect_shape, store=store, model_name=name,
-        )
-        result.name = name
-        results.append(result)
-        if not args.quiet:
-            _print_summary(result)
+    try:
+        for name, spec in models.items():
+            if not args.quiet:
+                print(f"\n[{name}] {spec}")
+            adapter = adapters.build(spec, fno_root=fno_root, device=device,
+                                     target=target)
+            if expect_shape is not None and hasattr(adapter, "expect_shape"):
+                adapter.expect_shape = expect_shape
+            result = evaluate(
+                adapter, dataset, settings, names, options,
+                progress=None if args.quiet else _progress(name),
+                expect_shape=expect_shape, store=store, model_name=name,
+            )
+            result.name = name
+            if not args.quiet:
+                _print_summary(result)
+            if legacy:
+                results.append(result)
+                continue
+            path = out if h5_out else default_path(out, name, target)
+            try:
+                write_run(path, result, info, settings.to_dict(), environment(),
+                          command=" ".join(sys.argv), overwrite=overwrite)
+            except FileExistsError as exc:
+                raise SystemExit(str(exc)) from None
+            if cache is not None:
+                cache.flush()
+            if not args.quiet:
+                print(f"wrote {path}")
+    finally:
+        if cache is not None:
+            cache.close()
 
-    payload = report.write(out, results, info, settings.to_dict(),
-                           environment(), title=args.title)
-    if not args.quiet:
-        print(f"\nwrote {out}/results.json, summary.csv, report.md"
-              + (", curves.npz" if (out / "curves.npz").exists() else ""))
-        print(f"schema {payload['schema']}")
+    if legacy:
+        payload = report.write(out, results, info, settings.to_dict(),
+                               environment(), title=args.title)
+        if not args.quiet:
+            print(f"\nwrote {out}/results.json, summary.csv, report.md"
+                  + (", curves.npz" if (out / "curves.npz").exists() else ""))
+            print(f"schema {payload['schema']}")
     return 0
 
 
@@ -321,14 +386,22 @@ def _plot(args) -> int:
     for key in ("vmax", "dead"):
         if getattr(args, key) is not None:
             options[key] = getattr(args, key)
-    store = None
-    candidates = [args.store] if args.store else _store_candidates(args.run)
+    from .io.cache import StoreGroup, open_cache
+
+    stores = []
+    candidates = [Path(p) for p in (args.store or _store_candidates(args.run))]
     for path in candidates:
-        if path is not None and (Path(path) / "index.json").exists():
-            store = PredictionStore.open(path)
-            break
+        if path.is_dir() and (path / "index.json").exists():
+            stores.append(PredictionStore.open(path))
+        elif path.is_file() and path.suffix.lower() in {".h5", ".hdf5"}:
+            stores.append(open_cache(path))
+    store = None
+    if len(stores) == 1:
+        store = stores[0]
+    elif stores:
+        store = StoreGroup(stores)
     if args.store and store is None:
-        raise SystemExit(f"no prediction store at {args.store}")
+        raise SystemExit(f"no prediction store or cache at {', '.join(str(p) for p in args.store)}")
     if not args.quiet:
         print(f"models {catalog.models}; targets {catalog.targets}; groups "
               + ", ".join(f"{t}: {len(catalog.groups[t])}" for t in catalog.targets)
@@ -364,12 +437,21 @@ def _build(args) -> int:
 
 
 def _store_candidates(runs):
-    out = []
+    out, seen = [], set()
     for run in runs:
         run = Path(run)
-        for base in (run, run.parent, run.parent.parent):
-            out.append(base / "predictions")
-        out.extend(sorted(p.parent for p in run.rglob("predictions/index.json")))
+        bases = [run, run.parent, run.parent.parent]
+        candidates = [base / "predictions" for base in bases]
+        candidates.extend(sorted(p.parent for p in run.rglob("predictions/index.json")))
+        if run.is_dir():
+            candidates.extend(sorted(run.glob("*.cache.h5")))
+            candidates.extend(sorted(run.rglob("*.cache.h5")))
+        elif run.is_file():
+            candidates.extend(sorted(run.parent.glob("*.cache.h5")))
+        for path in candidates:
+            if path not in seen:
+                seen.add(path)
+                out.append(path)
     return out
 
 
@@ -400,12 +482,36 @@ def _demo(args) -> int:
     manifest = write_demo(args.out / "data", args.n_samples, shape)
     print(f"wrote {manifest}")
     return _run(argparse.Namespace(
-        config=None, data=str(manifest), model=[f"toy=synthetic:1.5"],
+        config=None, data=str(manifest), model=["toy=synthetic:1.5"],
         metrics="all", out=args.out / "results", title="21cmEVAL demo",
         split=None, limit=None, target=None, density=None, fno_root=None,
         device=None, set=[], quiet=args.quiet, indices=None,
         indices_json=None, box_mpc=None, expect_shape=None, expect_nz=None,
+        legacy_dir=False, overwrite=True, cache=None, save_predictions=None,
+        save_n=8, save_ids=None, draws=None, mode=None, score_draw=None,
+        z_range=None,
     ))
+
+
+def _validate(args) -> int:
+    from .io.runfile import validate_run
+
+    bad = 0
+    for path in args.files:
+        try:
+            problems = validate_run(path, strict=args.strict)
+        except Exception as exc:  # noqa: BLE001 - report the path, keep checking the rest
+            print(f"{path}: {exc}")
+            bad += 1
+            continue
+        if problems:
+            print(f"{path}: {len(problems)} problem(s)")
+            for problem in problems:
+                print(f"  - {problem}")
+            bad += 1
+        else:
+            print(f"{path}: ok")
+    return 1 if bad else 0
 
 
 def _resolve_expect_shape(args, info: dict):

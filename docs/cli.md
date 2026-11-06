@@ -54,7 +54,7 @@ Evaluate one or more models over one data set.
 | `--data SPEC` | data path, directory, manifest `.json`, `.npz`, `.h5`, or `synthetic:N` |
 | `--model NAME=SPEC` | model adapter spec (repeatable); see [Adapters](adapters.md) |
 | `--metrics LIST` | comma list of metric names; default all registered |
-| `--out DIR` | output directory (default `results`) |
+| `--out PATH` | output directory (default `results`) or one `<model>.<target>.h5` file |
 | `--title TEXT` | report title (default `21cmEVAL report`) |
 | `--split NAME` | keep samples whose declared split equals `NAME` |
 | `--limit N` | evaluate at most N samples |
@@ -72,21 +72,31 @@ Evaluate one or more models over one data set.
 | `--draws N` | predictions per sample for stochastic/generative models |
 | `--mode pointwise\|generative` | generative skips voxel-by-voxel metrics and pointwise keys |
 | `--score-draw first\|mean` | what the standard metrics score when `--draws > 1` |
-| `--save-predictions DIR` | write truth and prediction cubes for map figures |
+| `--cache PATH` | optional `eval21-cache/1` HDF5 for cubes; a directory gets `<target>.cache.h5` |
+| `--save-predictions PATH` | legacy prediction-store directory, or an `.h5` cache path |
 | `--save-n N` | samples to store (default 8; `0` = all) |
 | `--save-ids a,b` | store exactly these sample ids instead |
+| `--legacy-dir` | write the old `results.json` + CSV + `curves.npz` directory |
+| `--overwrite` | replace existing run files / cache entries |
 | `--quiet` | suppress progress and per-model summaries |
 
 The run prints the dataset summary, the metric list, a per-model progress line (every tenth
 sample), a five-number summary (RMSE, R², coherence at k≈0.2, |Δτ|/σ, ms per sample) and the
-list of skipped metrics with reasons.
+list of skipped metrics with reasons. Each model is then written as
+`<out>/<model>.<target>.h5` (schema `eval21-run/1`); a directory is created if needed.
 
 ```bash
-eval21 run --data cubes/ --model toy=synthetic:1.5 --out results/toy
+eval21 run --data cubes/ --model toy=synthetic:1.5 --out results/
+#   -> results/toy.xhi.h5
+
+eval21 run --data cubes.h5 --model fno=fno21cm:ckpt.pt --out results/fno.xhi.h5
 eval21 run --config examples/fno21cm_eval.toml
 eval21 run --data cache.h5 --model gen=python:gen.py --draws 16 --mode generative \
-    --out results/gen --save-predictions results/predictions
+    --out results/gen --cache results/gen/xhi.cache.h5
 ```
+
+Use `--legacy-dir` when a downstream tool still expects `results.json`, `summary.csv`,
+`stages.csv`, `report.md` and `curves.npz`.
 
 ### Selection and split resolution
 
@@ -196,9 +206,19 @@ Writes `demo/data/manifest.json` plus npz cubes, then runs `synthetic:1.5` over 
 metrics and writes `demo/results/`. It is the installation smoke test and the smallest
 end-to-end example of the report and figure pipeline.
 
+## `eval21 validate`
+
+```bash
+eval21 validate results/fno.xhi.h5 [--strict]
+```
+
+Checks the schema, required groups, sample count, `dims`/`units` on arrays, and (with
+`--strict`) that every dataset appears in `/manifest`. Exits non-zero on any problem; multiple
+files are checked in one call.
+
 ## `eval21 plot`
 
-Draw figures from one or more result directories. This command is documented in full in
+Draw figures from one or more run files or legacy result directories. This command is documented in full in
 [Visualization](visualization.md); the summary is:
 
 ```bash
@@ -211,9 +231,9 @@ eval21 plot gallery --run results/ --out figs/ --title "LoReLi II test"
 | option | meaning |
 |---|---|
 | `FIGURE ...` | figure names, group names, `all`, or `list` |
-| `--run DIR` | result directory or a tree containing them (repeatable) |
+| `--run PATH` | run file, legacy directory, or a tree of either (repeatable) |
 | `--out DIR` | output directory |
-| `--store DIR` | prediction store (default: a `predictions/` directory near the results) |
+| `--store PATH` | cache `.h5` or legacy prediction store (repeatable; default: `predictions/` dirs and `*.cache.h5` near the runs) |
 | `--opt KEY=VALUE` | figure option (repeatable) |
 | `--models a,b` | subset and order of models (default: all complete models) |
 | `--style FILE` | JSON `{model: {"label": ..., "color": ..., "ls": ...}}` |

@@ -15,7 +15,7 @@ def test_ensemble_figures(tmp_path):
     for name, mode in (("gen", "generative"), ("gen_pw", "pointwise")):
         main(["run", "--data", data, "--model", f"{name}=toygen:1.5", "--draws", "4", "--mode", mode,
               "--metrics", "ensemble,spectrum", "--out", str(results / name / "xhi"),
-              "--save-predictions", str(results / "predictions"), "--save-n", "2",
+              "--legacy-dir", "--save-predictions", str(results / "predictions"), "--save-n", "2",
               "--set", "ensemble_voxels=2000", "--quiet"])
     out = tmp_path / "figs"
     main(["plot", "ensemble", "--run", str(results), "--out", str(out), "--quiet"])

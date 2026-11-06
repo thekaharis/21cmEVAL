@@ -239,23 +239,45 @@ class MySource(Source):
 `read` must return each requested field as `(Nx, Ny, Nz)` on `raw.z`, plus an optional
 `valid` mask over LOS planes. Use `--format python:my_source.py:MySource`.
 
-## Prediction store
+## Inference cache
 
-`eval21 run --save-predictions DIR` writes the truth and prediction cubes that map-based
-figures need. Cubes are float16, so a `140 × 140 × 512` field is about 20 MB.
+Map figures need cubes, so `eval21 run --cache PATH` writes an optional **`eval21-cache/1`**
+HDF5 file. Cubes are float16, so a `140 × 140 × 512` field is about 20 MB. A run file never
+contains cubes; this cache is regenerable and can be deleted.
+
+```bash
+eval21 run ... --out results/ --cache results/fno.xhi.cache.h5 --save-n 8
+eval21 run ... --out results/ --cache results/ --save-n 8      # -> results/xhi.cache.h5
+eval21 plot maps --run results/ --store results/fno.xhi.cache.h5
+```
 
 ```text
-DIR/index.json                    {"samples": [...], "models": [...], "fields": [...], "draws": {...}}
-DIR/truth/<sample id>.npz         targets `t_<field>`, inputs `i_<field>`, z_grid, box_mpc,
-                                  omega_m, params (JSON string)
-DIR/<model>/<sample id>.npz       predicted fields `<field>`; with --draws also
-                                  `<target>__draws` (store_draws kept)
+cache.h5
+├── /                  attrs: schema="eval21-cache/1", created, producer
+├── /index             JSON: samples, models, fields, targets, draws
+├── /ids               (N,) UTF-8
+├── /splits            (N,) UTF-8
+├── /omega_m           (N,) float64
+├── /params/{names,values}
+├── /z_grid            (Nz,) float64
+├── /box_mpc           scalar float64
+├── /truth/<field>     (N, Nx, Ny, Nz) float16, targets and inputs
+├── /models/<model>/<field>          (N, Nx, Ny, Nz) float16
+└── /models/<model>/draws/<field>    (N, D, Nx, Ny, Nz) float16, with --draws
 ```
 
 Selection is `--save-n N` (first N wanted samples, default 8; `0` = all) or `--save-ids`.
-Files are merged, not overwritten: two runs of the same model on x_HI and T_b can write into
-one store, and fields already present are kept. `PredictionStore.open(dir)` reads it back;
-`resolve("1001")` finds `cone1001` and vice versa, so figure file names can drop the prefix.
+Several models of one target can share one cache (the CLI opens it in append mode), which is
+what map figures comparing models need. Truth is written once; each model adds its own group.
+
+`open_cache(path)` reads it back; `resolve("1001")` finds `cone1001` and vice versa, so figure
+file names can drop the prefix. `StoreGroup([...])` merges several caches (e.g. one per target)
+behind the same interface.
+
+`--save-predictions DIR` still writes the legacy **prediction store** (one `.npz` per sample,
+`DIR/index.json`, `DIR/truth/`, `DIR/<model>/`); an `.h5` path passed to `--save-predictions`
+is treated as the new cache. Legacy stores and caches both satisfy the interface the map
+figures use, so `eval21 plot --store` accepts either.
 
 ## `describe()` fields
 

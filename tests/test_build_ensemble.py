@@ -212,7 +212,7 @@ def test_cli_target_reaches_the_metrics(tmp_path):
     model = tmp_path / "m.py"
     model.write_text("def predict(s):\n    return {'tb': s.targets['tb'] * 0.5, 'xhi': s.targets['xhi']}\n")
     main(["run", "--data", str(tmp_path / "c.h5"), "--target", "tb", "--model", f"m=python:{model}",
-          "--metrics", "voxel", "--out", str(tmp_path / "r"), "--quiet"])
+          "--metrics", "voxel", "--out", str(tmp_path / "r"), "--legacy-dir", "--quiet"])
     r = json.loads((tmp_path / "r" / "results.json").read_text())
     assert r["settings"]["target"] == "tb"
     voxel = r["models"]["m"]["metrics"]["voxel"]

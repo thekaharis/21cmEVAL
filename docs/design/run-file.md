@@ -1,8 +1,25 @@
 # `eval21-run/1`: the single-file eval format
 
-**Status:** proposed, not implemented. This is the spec to implement against.
+**Status:** implemented (v1) in `eval21/io`; `eval21 run` writes run files by default.
 **Scope:** one evaluation of **one model** on one target over one dataset. The inference cache is
 a separate, optional file (`eval21-cache/1`).
+
+### v1 deviations from the original design
+
+- `/model/meta` was added: `n_samples`, `seconds`, `skipped` and per-metric
+  `needs`/`targets`/`pointwise`.
+- `/manifest`'s `datasets` is an ordered **list** of `{path, kind, dtype, shape, dims, units}`,
+  not a mapping; this preserves duplicate and order information for generic readers.
+- Array keys are metric-local (`spectrum_k`), not duplicated as `metric__key`; the group names
+  the metric. No `description` attribute is written yet.
+- The cache is **one file shared by models of one target** with `/models/<name>/...`, not one
+  cache per model; this is what makes cross-model map figures work.
+- `eval21 convert`, `eval21 export` and `eval21 report` are not implemented yet. The legacy
+  writer remains available behind `--legacy-dir`, and `--save-predictions DIR` still writes the
+  old prediction-store directory.
+- `--store` on `eval21 plot` accepts caches (repeatable) and legacy stores; the writing flag is
+  `--cache`.
+- `git_commit` is not written; `producer` and `eval21_version` are.
 
 ## Decision
 
@@ -41,8 +58,8 @@ old directory (no partial reads; kept only as an export).
 | metric results (ragged dicts, NaN) | yes, `/metrics/<name>/result` | canonical, exactly `results.json` semantics |
 | per-sample arrays (spectra, PDFs, cyl maps, gallery, …) | yes, `/metrics/<name>/arrays/*` | the figures' input |
 | sample ids, splits, Ω_m, parameters | yes, `/samples/*` | aligns every per-sample array |
-| `summary.csv` / `stages.csv` | **no** — derived | `eval21 export` regenerates them |
-| `report.md` | **no** — derived | `eval21 report FILE` renders it |
+| `summary.csv` / `stages.csv` | **no** — derived | not reimplemented for run files yet; `--legacy-dir` writes them |
+| `report.md` | **no** — derived | not reimplemented for run files yet; `--legacy-dir` writes it |
 | truth/prediction cubes | **no** — separate cache | optional, large, regenerable |
 | figures | no | outputs, not data |
 
@@ -72,7 +89,8 @@ run.h5
 │       ├── names                      (P,) UTF-8
 │       └── values                     (N, P) float64, NaN = absent
 ├── /model/
-│   └── info                           JSON: adapter.describe() + runner post-processing
+│   ├── info                           JSON: adapter.describe() + runner post-processing
+│   └── meta                           JSON: n_samples, seconds, skipped, metric metadata
 └── /metrics/
     └── <metric>/
         ├── result                     scalar UTF-8 JSON: the metric's result() dict
@@ -104,13 +122,14 @@ A single JSON string, written last, describing the file. It is the contract for 
   "payload_schema": "eval21/1",
   "model": "fno",
   "target": "xhi",
-  "datasets": {
-    "/dataset/z_grid": {"kind": "array", "dtype": "float64", "dims": ["z"], "units": "redshift"},
-    "/metrics/spectrum/arrays/spectrum_k": {"kind": "array", "dtype": "float64",
-                                            "dims": ["k"], "units": "Mpc^-1"},
-    "/metrics/spectrum/arrays/spectrum_ratio_active_0p05_0p95": {"kind": "array",
-        "dtype": "float64", "dims": ["sample", "k"], "units": ""}
-  },
+  "datasets": [
+    {"path": "/dataset/z_grid", "kind": "array", "dtype": "float64", "shape": [512],
+     "dims": ["z"], "units": "redshift"},
+    {"path": "/metrics/spectrum/arrays/spectrum_k", "kind": "array", "dtype": "float64",
+     "shape": [32], "dims": ["k"], "units": "Mpc^-1"},
+    {"path": "/metrics/spectrum/arrays/spectrum_ratio_active_0p05_0p95", "kind": "array",
+     "dtype": "float64", "shape": [200, 32], "dims": ["sample", "k"], "units": ""}
+  ],
   "metric_groups": ["anisotropy", "bubble", "spectrum", "…"],
   "n_samples": 200,
   "n_metrics": 20
@@ -125,13 +144,14 @@ can enumerate dimensions and units without heuristics.
 - `result` is the exact `result()` dict, serialised with `json.dumps(..., allow_nan=False)`;
   non-finite floats are `null` (the current `report.jsonable` convention). This keeps the
   payload identical to today's `results.json`.
-- `arrays/*` are the per-sample exports, with their existing key names
-  (`spectrum_k`, `cylindrical__cyl_ratio`, `gallery_xhi_truth`, …) so the current figure code
-  changes only where it opens the file.
+- `arrays/*` are the per-sample exports, keyed by the metric-local name (`spectrum_k`,
+  `cyl_ratio`, `gallery_xhi_truth`, …); the enclosing group names the metric, so keys are not
+  prefixed twice.
 - Every array carries:
-  - `dims`: comma-separated axis names, e.g. `sample,k` or `sample,stage,x,y`;
-  - `units`: `Mpc^-1`, `mK`, `""` for dimensionless;
-  - `description`: one line for humans.
+  - `dims`: comma-separated axis names, e.g. `sample,k` or `sample,stage,x,y`; best-effort,
+    with explicit rules for non-sample first axes and a generic `d<N>` fallback;
+  - `units`: `Mpc^-1`, `mK`, `redshift`, `count`, `s`, or `""` for dimensionless.
+  - No `description` attribute yet.
 
 Axis names form a small controlled vocabulary: `sample`, `stage`, `chunk`, `k`, `kperp`,
 `kpar`, `x`, `y`, `z`, `bin`, `draw`.
@@ -139,16 +159,9 @@ Axis names form a small controlled vocabulary: `sample`, `stage`, `chunk`, `k`, 
 ### Why no tables or report in the file
 
 `summary.csv`, `stages.csv` and `report.md` are projections of `/metrics` and `/model`. Storing
-them duplicates data and invites divergence. They are produced on demand:
-
-```bash
-eval21 export run.h5 --format csv --out tables/       # summary.csv + stages.csv
-eval21 report run.h5 --out report.md
-eval21 export run.h5 --format legacy-dir old_run/     # results.json + curves.npz + CSVs
-```
-
-The last command is the compatibility bridge: an old consumer that expects a run directory gets
-one reconstructed from the file.
+them duplicates data and invites divergence. They are not generated from run files in v1;
+`--legacy-dir` still writes the old five-file directory. The planned compatibility bridge
+(`eval21 export run.h5 --format csv|legacy-dir`, `eval21 report run.h5`) is not implemented.
 
 ## Dataset rules
 
@@ -219,28 +232,32 @@ bump; adding keys is fine.
 
 ## Inference cache: `eval21-cache/1`
 
-Separate HDF5 file, optional, written only with `--cache` (or `--save-predictions` mapped to
-it). It contains the cubes map figures need and nothing else.
+Separate HDF5 file, optional, written only with `--cache` (an `.h5` path passed to
+`--save-predictions` is treated the same way). It contains the cubes map figures need and nothing
+else. One cache may hold several models of one target, which is what cross-model map figures
+need; use several caches (and `StoreGroup`) for several targets.
 
 ```text
 run.xhi.cache.h5
-├── /                         attrs: schema="eval21-cache/1", model, target, created,
-│                                    box_mpc, z_grid_len, n_samples
+├── /                         attrs: schema="eval21-cache/1", created, producer
+├── /index                    JSON: samples, models, fields, targets, draws
 ├── /ids                      (N,) UTF-8
+├── /splits                   (N,) UTF-8
+├── /omega_m                  (N,) float64
+├── /params/{names,values}
 ├── /z_grid                   (Nz,) float64
-├── /truth/<field>            (N, Nx, Ny, Nz) float16
-├── /predictions/<field>      (N, Nx, Ny, Nz) float16
-├── /draws/<field>            (N, D, Nx, Ny, Nz) float16, optional
-└── /index                    JSON: samples, fields, draws, dtype, chunks
+├── /box_mpc                  scalar float64
+├── /truth/<field>            (N, Nx, Ny, Nz) float16, targets and inputs
+├── /models/<model>/<field>   (N, Nx, Ny, Nz) float16
+└── /models/<model>/draws/<field>  (N, D, Nx, Ny, Nz) float16, with --draws
 ```
 
-- float16 like today's store (20.07 MB per `140×140×512` field), chunked along z so one slice
-  reads one chunk group, gzip + shuffle.
-- Truth and prediction are both present; a cache is self-contained for map figures.
-- Regenerable; it is not part of the archival record and not required for statistics.
-- Samples are the current selection (`--save-n`, `--save-ids`), default 8.
-- If several models should share truth, that is a future `/models/<name>` layout; v1 keeps one
-  cache per eval for simplicity and independent writes.
+- float16 like the legacy store (20.07 MB per `140×140×512` field), chunked along z so one
+  slice reads one chunk group, gzip 4 + shuffle.
+- Truth is written once; each model appends its own group. A cache is self-contained for map
+  figures and is regenerable — it is not part of the archival record.
+- Samples are the current selection (`--save-n`, `--save-ids`), default 8; `--save-n 0` is all.
+- Opening an existing cache appends; `--overwrite` truncates it once at the start of the run.
 
 ## CLI surface
 
@@ -258,14 +275,12 @@ eval21 run ... --out results/ --cache results/fno.xhi.cache.h5 --save-n 8
 # old layout during the transition (one release)
 eval21 run ... --out results/ --legacy-dir
 
-# verification and migration
-eval21 validate results/fno.xhi.h5
-eval21 convert results_old/ --out results_new/
-eval21 export results/fno.xhi.h5 --format csv --out tables/
-eval21 export results/fno.xhi.h5 --format legacy-dir results_old_reconstructed/
+# verification (migration helpers convert/export are not implemented yet)
+eval21 validate results/fno.xhi.h5 [--strict]
 
 # plotting accepts files, directories of files, and legacy directories
 eval21 plot all --run results/ --out figs/
+eval21 plot all --run results/fno.xhi.h5 --out figs/
 ```
 
 Naming rule: `<sanitized model>.<target>.h5`, e.g. `fno.xhi.h5`, `ufno.xhi.h5`,
@@ -276,41 +291,40 @@ model. Existing files are not overwritten unless `--overwrite`.
 
 `eval21 validate FILE [--strict]` checks:
 
-- `schema` major is known; `payload_schema` known;
+- the root `schema` is `eval21-run/1`;
 - required groups exist (`manifest`, `meta`, `dataset`, `samples`, `model`, `metrics`);
-- `len(/samples/ids) == /manifest n_samples`;
-- every `/metrics/*/arrays/*` dataset has `dims`, `units` and a first axis of length `N` when
-  `sample` is in its dims;
-- every JSON blob parses and contains no NaN literals;
-- `manifest.datasets` agrees with the actual tree (strict: no unlisted datasets).
+- `len(/samples/ids) == /model/meta/n_samples`;
+- every `/metrics/*/arrays/*` dataset has non-empty `dims` and `units` attributes
+  (sample-axis semantics are best-effort and not enforced, because scans and gallery subsets
+  are shorter than `N`);
+- `--strict`: `/manifest` parses and lists every dataset in the file (and nothing else).
 
-The schema itself ships as `eval21/schemas/eval21-run-1.json` (JSON Schema for the manifest and
-the required attributes), so external validators can use it too.
+Writers serialise with `allow_nan=False`, so JSON blobs are strict by construction; `validate`
+does not re-parse every blob. No separate JSON-Schema file ships in v1.
 
 ## Impact on the rest of the repo
 
 | area | change |
 |---|---|
 | `runner.evaluate` | returns the same `ModelResult`; the CLI writes one file per result instead of one directory per multi-model run |
-| `report.py` | becomes a serialiser: `write_run(path, result, ...)` plus `render_markdown` reading the file |
-| `store.py` | becomes the `eval21-cache/1` writer/reader (`open_cache`, `slice`, `truth`, `prediction`) |
-| `visualization/common.Run` | opens a file or a legacy directory via `open_run`; `find_runs` accepts `*.h5` and `results.json` |
-| `eval21 plot` | `--run` accepts files/dirs; `--store` becomes `--cache` (alias kept) |
+| `report.py` | unchanged: still renders the legacy directory; `eval21/io/runfile.py` writes run files |
+| `store.py` | unchanged: legacy prediction store; the new cache lives in `eval21/io/cache.py` |
+| `visualization/common.Run` | opens a file or a legacy directory via `open_run`; `find_runs` accepts `eval21-run/1` `*.h5` and `results.json` |
+| `eval21 plot` | `--run` accepts files/dirs; `--store` reads caches, legacy stores or several of either |
 | docs | `reports.md` and `data.md` describe the file; `visualization.md` the reader; `cli.md` the new flags |
 
 The figure code itself is untouched except for how it obtains `Run.curves` and the cache.
 
 ## Migration plan
 
-1. **I/O layer** (`eval21/io/`): `runfile.py` (writer/reader), `cache.py`, `schema.py`,
-   `convert.py`; round-trip, legacy-adapter and validator tests.
-2. **Writer**: `eval21 run` writes `<model>.<target>.h5` per model; `--legacy-dir` preserves the
-   old output; `eval21 validate`.
-3. **Reader**: `open_run` dispatches file/directory; `visualization` uses it; `eval21 plot` reads
-   both; `--cache` replaces `--store` (alias).
-4. **Compatibility**: `eval21 convert`, `eval21 export --format legacy-dir`, docs and handoff.
-5. **Default flip**: new file is the default; legacy directory behind the flag; announce in the
-   README and handoff.
+1. **I/O layer** — done: `eval21/io/runfile.py`, `eval21/io/cache.py`; round-trip, legacy-adapter
+   and validator tests in `tests/test_runfile.py`.
+2. **Writer** — done: one `<model>.<target>.h5` per model; `--legacy-dir`; `eval21 validate`.
+3. **Reader** — done: `open_run` dispatches file/directory; `visualization.common.Run` uses it;
+   `eval21 plot --run` accepts both; `--store` reads caches and legacy stores (repeatable).
+4. **Compatibility** — partial: the legacy writer is preserved, but `convert`, `export` and the
+   Markdown report for run files are not implemented yet.
+5. **Default flip** — done: the HDF5 file is the default; `--legacy-dir` is the escape hatch.
 
 ## Explicit non-goals
 

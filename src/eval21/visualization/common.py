@@ -1,7 +1,7 @@
 """Loading 21cmEVAL result directories for the figures.
 
-A *run* is one ``eval21 run`` output directory (``results.json`` + ``curves.npz``), with one
-target field and one or more models. Runs of the same model, target and data are merged (e.g. a
+A *run* is one ``eval21 run`` output: an ``eval21-run/1`` HDF5 file, or a legacy directory
+(``results.json`` + ``curves.npz``), with one target field and one or more models. Runs of the same model, target and data are merged (e.g. a
 later run that only adds ``--metrics cylindrical,gallery``); a metric present in two of them is
 an error. Several runs of the same target on different data (e.g.
 LoReLi's redshift groups, one manifest each) are *groups*: per-sample curves are pooled over them
@@ -12,7 +12,6 @@ recursively, so ``--run results/`` picks up a whole tree (``<model>/<group>/<tar
 from __future__ import annotations
 
 import itertools
-import json
 import warnings
 from pathlib import Path
 
@@ -27,9 +26,14 @@ def field_name(field: str) -> str:
 
 
 class Run:
+    """One run file (``eval21-run/1``) or legacy result directory, read through one interface."""
+
     def __init__(self, path: Path):
+        from ..io.runfile import open_run
+
         self.path = Path(path)
-        self.results = json.loads((self.path / "results.json").read_text())
+        self._reader = open_run(self.path)
+        self.results = self._reader.as_results()
         self.settings = self.results.get("settings", {})
         self.target = self.settings.get("target", "xhi")
         dataset = self.results.get("dataset", {})
@@ -46,14 +50,7 @@ class Run:
 
     def curves(self, model: str) -> dict:
         if self._curves is None:
-            file = self.path / "curves.npz"
-            self._curves = {}
-            if file.exists():
-                with np.load(file, allow_pickle=False) as d:
-                    for key in d.files:
-                        name, _, rest = key.partition("__")
-                        _, _, short = rest.partition("__")
-                        self._curves.setdefault(name, {})[short] = d[key]
+            self._curves = self._reader.curves()
         return self._curves.get(model, {})
 
     def metric(self, model: str, name: str) -> dict:
@@ -91,17 +88,33 @@ class Merged:
         return {}
 
 
+def _is_run_file(path: Path) -> bool:
+    if path.suffix.lower() not in {".h5", ".hdf5"} or not path.is_file():
+        return False
+    try:
+        import h5py
+
+        with h5py.File(path, "r") as handle:
+            return str(handle.attrs.get("schema", "")).startswith("eval21-run/")
+    except (OSError, ValueError):
+        return False
+
+
 def find_runs(paths) -> list[Run]:
     runs = []
     for path in paths:
         path = Path(path)
+        if path.is_file() and _is_run_file(path):
+            runs.append(Run(path))
+            continue
         if (path / "results.json").exists():
             runs.append(Run(path))
             continue
-        found = sorted(p.parent for p in path.rglob("results.json"))
+        found = [p.parent for p in path.rglob("results.json")]
+        found += [p for p in path.rglob("*.h5") if _is_run_file(p)]
         if not found:
-            raise SystemExit(f"no 21cmEVAL results under {path}")
-        runs.extend(Run(p) for p in found)
+            raise SystemExit(f"no 21cmEVAL results (run files or result directories) under {path}")
+        runs.extend(Run(p) for p in sorted(set(found)))
     return runs
 
 

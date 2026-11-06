@@ -209,7 +209,7 @@ def test_cli_demo(tmp_path, capsys):
                  "--shape", "16,16,8", "--quiet"])
     assert code == 0
     assert (tmp_path / "data" / "manifest.json").exists()
-    assert (tmp_path / "results" / "results.json").exists()
+    assert (tmp_path / "results" / "toy.xhi.h5").exists()
 
 
 def test_cli_indices_json_uses_cone_ids(tmp_path):
@@ -227,8 +227,12 @@ def test_cli_indices_json_uses_cone_ids(tmp_path):
     assert main(["run", "--data", str(path), "--indices-json", str(metadata),
                  "--model", "toy=synthetic:1.0", "--metrics", "voxel",
                  "--out", str(out), "--quiet"]) == 0
-    payload = json.loads((out / "results.json").read_text())
-    assert payload["models"]["toy"]["n_samples"] == 2
+    from eval21.io import open_run
+    run = open_run(out / "toy.xhi.h5")
+    try:
+        assert run.as_results()["models"]["toy"]["n_samples"] == 2
+    finally:
+        run.close()
 
 
 def test_cli_run_with_config(tmp_path):
@@ -250,5 +254,9 @@ def test_cli_run_with_config(tmp_path):
         'enabled = ["voxel", "spectrum"]\n'
     )
     assert main(["run", "--config", str(config), "--quiet"]) == 0
-    payload = json.loads((tmp_path / "out" / "results.json").read_text())
-    assert set(payload["models"]["toy"]["metrics"]) == {"voxel", "spectrum"}
+    from eval21.io import open_run
+    run = open_run(tmp_path / "out" / "toy.xhi.h5")
+    try:
+        assert set(run.as_results()["models"]["toy"]["metrics"]) == {"voxel", "spectrum"}
+    finally:
+        run.close()

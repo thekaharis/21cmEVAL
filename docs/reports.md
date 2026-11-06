@@ -1,20 +1,165 @@
-# Reports
+# Reports and run files
 
-`eval21 run` writes five files to `--out`:
+`eval21 run` writes **one HDF5 file per model** in `--out`:
+
+```text
+results/
+├── fno.xhi.h5            # model fno, target x_HI
+└── ufno.xhi.h5
+```
+
+The file is schema **`eval21-run/1`**. It contains the metric results, the per-sample arrays the
+figures need, the dataset description and the settings — but **no cubes, CSV tables or rendered
+report**. Those are either derived on demand or stored in the optional inference cache.
+
+```bash
+eval21 run --data cubes.h5 --model fno=fno21cm:ckpt.pt --out results/
+# results/fno.xhi.h5
+
+eval21 validate results/fno.xhi.h5 --strict
+```
+
+Naming is `<sanitized model>.<sanitized target>.h5`. A single model may name the file directly
+(`--out results/fno.h5`); that is an error with several `--model` entries. Existing files are kept
+unless `--overwrite` is passed.
+
+## Reading a run file
+
+`open_run` accepts a run file and a legacy run directory, so downstream code does not branch on
+the storage format:
+
+```python
+from eval21.io import open_run
+
+run = open_run("results/fno.xhi.h5")
+run.schema                    # "eval21-run/1"
+run.model, run.target         # "fno", "xhi"
+run.settings                  # Settings.to_dict()
+run.dataset_info              # the dataset's describe()
+run.n_samples, run.sample_ids
+run.metric_names()
+run.result("voxel")           # the metric's result() dict
+run.metric_meta("voxel")      # needs / targets / pointwise
+run.arrays("spectrum")        # {"spectrum_k": ..., "spectrum_ratio_...": ...}
+run.curves()                  # {"fno": {array key: array}} (legacy-compatible shape)
+run.as_results()              # the old results.json payload, one model
+run.validate(strict=True)     # [] when the file is consistent
+```
+
+A raw `h5py` reader needs no eval21 code:
+
+```python
+import h5py, json
+
+with h5py.File("results/fno.xhi.h5") as h5:
+    manifest = json.loads(h5["manifest"][()])
+    print(manifest["metric_groups"])                 # 20 metrics
+    print(h5["metrics/spectrum/arrays/spectrum_k"].attrs["dims"])   # "k"
+```
+
+## Layout
+
+```text
+fno.xhi.h5
+├── /                  attrs: schema, payload_schema, created, producer, eval21_version,
+│                             model, target
+├── /manifest          UTF-8 JSON: ordered list of every dataset (path, kind, dtype,
+│                             shape, dims, units), metric groups, n_samples
+├── /meta/
+│   ├── environment    JSON: python, numpy, platform, host
+│   ├── versions       JSON: eval21, numpy, python, model framework
+│   ├── command        exact argv
+│   └── settings       JSON: Settings.to_dict()
+├── /dataset/
+│   ├── info           JSON: the dataset's describe()
+│   └── z_grid         (Nz,) float64, when the data declares one
+├── /samples/
+│   ├── ids            (N,) UTF-8
+│   ├── splits         (N,) UTF-8, "" = undeclared
+│   ├── omega_m        (N,) float64, NaN = not provided
+│   └── params/
+│       ├── names      (P,) UTF-8
+│       └── values     (N, P) float64, NaN = absent
+├── /model/
+│   ├── info           JSON: adapter.describe() + runner post-processing
+│   └── meta           JSON: n_samples, seconds, skipped metrics, metric metadata
+└── /metrics/<name>/
+    ├── result         UTF-8 JSON: the metric's result() dict (NaN -> null)
+    ├── meta           UTF-8 JSON: needs, targets, pointwise
+    └── arrays/
+        └── <key>      dataset with attrs dims / units
+```
+
+Array keys are metric-local (`spectrum_k`, `gallery_xhi_truth`), not prefixed with the metric
+name; the group carries that. `dims` is a comma-separated best-effort axis vocabulary
+(`sample,stage,chunk,k,kperp,kpar,x,y,z,bin,radius,distance`), `units` is `Mpc^-1`, `mK`,
+`redshift`, `count`, `s` or `""`. Arrays larger than 1 MB use gzip-4 + shuffle; everything uses
+HDF5's stable subset (`libver="earliest"`) and writes to a temporary file that is atomically
+renamed.
+
+`result` uses the same JSON conventions as the legacy `results.json`: non-finite floats become
+`null`, so strict JSON parsers work.
+
+## Legacy directory (`--legacy-dir`)
+
+During the transition, `--legacy-dir` writes the previous five-file layout:
 
 | file | content |
 |---|---|
-| `results.json` | the complete report, schema `eval21/1` |
+| `results.json` | complete report, schema `eval21/1`, all models |
 | `summary.csv` | every scalar leaf as one dotted column, one row per model |
 | `stages.csv` | long-form stage table: model, metric, group, stage, key, value |
 | `report.md` | headline table plus per-metric stage tables |
 | `curves.npz` | per-sample and per-stage arrays for figures and custom analysis |
 
-`stages.csv` and `curves.npz` are omitted when their content is empty (and a stale file from an
-earlier run is removed). Everything is written for every model in one pass, so comparing models
-never means merging files by hand.
+`stages.csv` and `curves.npz` are omitted when empty. `open_run(directory)` reads this layout;
+`eval21 plot` accepts both. CSV tables and the Markdown report are **not** rendered for run
+files yet — use `--legacy-dir` if you need them, or read `as_results()` and build your own.
 
-## `results.json`
+## What is in `/metrics`
+
+Every registered metric contributes one group. `result` is the same dict the metric's
+`result()` returns (see [Metrics](metrics.md)); the arrays are the per-sample exports that
+figures read. A metric that was skipped is absent from `/metrics` and listed in
+`/model/meta/skipped` with the reason. A new metric is a new group: old readers ignore it and a
+missing group is not an error.
+
+## Comparing runs
+
+Two runs are comparable when their settings agree on the fields that affect the metric:
+`box_mpc`, `omega_m`, `stage_edges`, `active_range`, `threshold`, `n_k_bins`, `k_targets`,
+`eft_k_max`, `coherence_level`, `highk_*`, and the front and bubble knobs. Every run file records
+all of them:
+
+```python
+from eval21.io import open_run
+
+a, b = open_run("run_a/fno.xhi.h5"), open_run("run_b/fno.xhi.h5")
+diff = {k: (a.settings[k], b.settings[k]) for k in a.settings
+        if a.settings[k] != b.settings[k]}
+```
+
+Redshift-window runs (LoReLi groups) are intentionally *not* comparable sample by sample; pass
+several run files or directories to `eval21 plot` and let it pool them as groups.
+
+## Optional cube cache
+
+Map figures need cubes, which are deliberately not in the run file. `--cache` writes them to a
+separate `eval21-cache/1` HDF5 file:
+
+```bash
+eval21 run ... --out results/ --cache results/fno.xhi.cache.h5 --save-n 8
+eval21 plot maps --run results/ --out figs/ --store results/fno.xhi.cache.h5
+```
+
+The cache holds `float16` truth and prediction cubes for the selected samples; it is regenerable
+and never needed to reproduce a statistic. The layout is documented in
+[Data](data.md#inference-cache). `--save-predictions` still writes the legacy directory store;
+an `.h5` path passed to it is treated as a cache.
+
+## Legacy `results.json` payload
+
+`run.as_results()` returns exactly this structure (one model per run file):
 
 ```json
 {
@@ -25,7 +170,7 @@ never means merging files by hand.
   "settings": { "...": "Settings.to_dict()" },
   "models": {
     "fno": {
-      "info": {"framework": "fno-21cm", "parameters": 1234567, "device": "cuda:0", "...": "..."},
+      "info": {"framework": "fno-21cm", "parameters": 1234567, "device": "cuda:0"},
       "n_samples": 200,
       "seconds": 812.4,
       "skipped": {"morphology": "missing input fields: ..."},
@@ -35,155 +180,10 @@ never means merging files by hand.
 }
 ```
 
-| top-level key | contents |
-|---|---|
-| `schema` | report schema; currently `eval21/1` |
-| `created` | ISO-8601 UTC timestamp (seconds) |
-| `environment` | python, platform, numpy, host |
-| `dataset` | `describe()` of the evaluated selection: format, path, shape, box, z range, fields, splits, excluded |
-| `settings` | the full `Settings`, so two reports can be compared field by field |
-| `models` | one entry per `--model`, in the order given |
-
-Per model:
-
-| key | contents |
-|---|---|
-| `info` | `describe()` merged with runner post-processing: `framework`, `parameters`, `device`, `checkpoint`, `draws`, `mode`, `score_draw`, `draws_identical`, `geometry_check`, … |
-| `n_samples` | samples evaluated |
-| `seconds` | wall-clock of the whole pass, including metric updates |
-| `skipped` | metric → reason for metrics that could not run |
-| `metrics` | metric name → the metric's `result()` dict, in registration order |
-
 Numbers are strict JSON: NumPy scalars are converted, arrays become lists, and non-finite floats
-become `null`. `settings` records the run, not the defaults — a reader can reproduce every
-choice.
+become `null`. `settings` records the run, not the defaults.
 
-## `summary.csv`
-
-One row per model. Columns are the dotted leaves of `info` and every scalar in every metric:
-`model`, `info.framework`, `info.parameters`, `voxel.rmse`, `voxel.r2`,
-`spectrum.active.coherence_ref`, `history.tau.error_sigma_med`, `efficiency.ms_per_sample`, …
-
-The column set is the union over models, so a model missing a metric gets an empty cell rather
-than shifting the table. Arrays, lists and non-finite values are skipped. This is the file to
-load with pandas for a model-comparison table:
-
-```python
-import pandas as pd
-df = pd.read_csv("results/compare/summary.csv", index_col="model")
-df[["voxel.rmse", "voxel.r2", "spectrum.active.coherence_ref"]].sort_values("voxel.rmse")
-```
-
-## `stages.csv`
-
-Long form, built from every metric's `stages` and `chunks` lists:
-
-```text
-model,metric,group,stage,key,value
-fno,spectrum,stages,xbar_HI 0.40-0.60,coherence_med,0.87
-fno,cylindrical,stages,x̄≈0.5,within_dead_band,0.42
-fno,observable,stages,active 0.05-0.95,power_bias_significance_dtb,3.1
-```
-
-| column | meaning |
-|---|---|
-| `model` | model name |
-| `metric` | metric name |
-| `group` | `stages` or `chunks` |
-| `stage` | the entry's `label`, else `z`, else its index |
-| `key` | dotted leaf name inside the entry |
-| `value` | scalar value |
-
-Auxiliary arrays inside a stage entry (`k_targets`, `delta2_k_targets`, `kperp_centers`,
-`kpar_centers`) are not exploded into rows; they live in `results.json` and `curves.npz`.
-
-This is the file for "metric X versus stage" plots that are not part of the figure registry:
-
-```python
-df = pd.read_csv("results/stages.csv")
-spec = df[(df.metric == "spectrum") & (df.key == "coherence_med")]
-```
-
-## `curves.npz`
-
-Named arrays, no pickles (`allow_pickle=False`). Keys are
-
-```text
-<model>__<metric>__<short name>
-```
-
-where `<short name>` is the metric's array key with its own family prefix. Examples:
-
-| key | shape | meaning |
-|---|---|---|
-| `fno__voxel__rmse_per_sample` | `(N,)` | per-sample RMSE |
-| `fno__voxel__r2_per_sample` | `(N,)` | per-sample R² |
-| `fno__spectrum__spectrum_k` | `(K,)` | k centres, 1/Mpc |
-| `fno__spectrum__spectrum_ratio_active_0p05_0p95` | `(N, K)` | power ratio per sample, active stage |
-| `fno__spectrum__spectrum_coherence_xbar_HI_0p40_0p60` | `(N, K)` | coherence per sample |
-| `fno__bubble__bubble_mass_truth_active` | `(N, R)` | MFP histograms |
-| `fno__history__history_z` | `(Nz,)` | redshift grid of the histories |
-| `fno__gallery__gallery_xhi_truth` | `(S, G, H, W)` | stored truth slices |
-| `fno__cylindrical__cyl_ratio` | `(N, C, Kpar, Kperp)` | per-sample cylindrical maps |
-| `fno__cylindrical__cyl_ratio_median` | `(C, Kpar, Kperp)` | pooled median maps |
-| `fno__ensemble__rank_histogram` | `(D+1,)` | rank histogram |
-
-The exact set depends on the metrics that ran and on the data (stage labels encode the edges).
-Print the inventory rather than guessing:
-
-```python
-import numpy as np
-with np.load("results/curves.npz") as d:
-    for key in d.files:
-        print(f"{key:60s} {d[key].shape}")
-```
-
-`eval21.visualization.common.Run.curves(model)` loads the file and strips the model and metric
-prefixes, giving `{short name: array}` per model. That is how the figures read it.
-
-## `report.md`
-
-A human-readable digest:
-
-1. title, creation time, sample scope, shape, box, data path and z range;
-2. headline table: RMSE, R², r(k) at 0.2 1/Mpc, k_r90, |Δτ|/σ, z50 error in σ, front-width
-   excess, bubble W1, partial-fraction excess, ms/sample, parameter count (columns appear only
-   when a model reports them);
-3. the skipped metrics and reasons;
-4. per model: framework/device/checkpoint line, then per metric either a stage table
-   (`stage | n_slices | …`) or a key/value table.
-
-Values are formatted compactly: integers with thousands separators, floats with four
-significant digits, tiny/huge floats in scientific notation, long lists as
-`med […] [min, max]`, `—` for undefined. The Markdown report is deliberately lossy; the JSON is
-the record.
-
-## Prediction store (optional, for figures)
-
-With `--save-predictions DIR` the run also writes float16 truth and prediction cubes for a few
-samples:
-
-```text
-DIR/index.json
-DIR/truth/<id>.npz          t_<field>, i_<field>, z_grid, box_mpc, omega_m, params
-DIR/<model>/<id>.npz        <field>, and with --draws <target>__draws
-```
-
-The layout and merging rules are documented in [Data](data.md#prediction-store). The store is
-input to `eval21 plot` only; it is never needed to reproduce a number in the report.
-
-## Comparing runs
-
-Two runs are comparable when their `settings` agree on the fields that affect the metric:
-`box_mpc`, `omega_m`, `stage_edges`, `active_range`, `threshold`, `n_k_bins`, `k_targets`,
-`eft_k_max`, `coherence_level`, `highk_*`, the front and bubble knobs. `eval21 run` records all
-of them, so a quick check is:
-
-```python
-import json
-a, b = (json.load(open(p))["settings"] for p in ("run_a/results.json", "run_b/results.json"))
-diff = {k: (a[k], b[k]) for k in a if a[k] != b[k]}
-```
-
-Redshift-window runs (LoReLi groups) are intentionally *not* comparable sample by sample; pass
-several result directories to `eval21 plot` and let it pool them as groups.
+The legacy `summary.csv`, `stages.csv`, `report.md` and `curves.npz` semantics are unchanged and
+documented by the legacy writer (`eval21/report.py`). `curves.npz` keys are
+`<model>__<metric>__<short name>`; `eval21.visualization.common.Run.curves(model)` strips the
+prefixes and returns `{short name: array}`.

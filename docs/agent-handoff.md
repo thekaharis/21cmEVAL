@@ -18,6 +18,7 @@ agent needs to work on or consume this repo without re-deriving the session.
 | Metric safety | `front3d`/`survey` restricted to x_HI targets; `front3d` marked pointwise | `e60c3e1` |
 | Build branch | `feat/build` recorded as merged with `-s ours`; **its code is not in main** | `8503a9f` |
 | README | `source` column removed from the metrics table | `69da225` |
+| Run output | **`eval21 run` writes one `eval21-run/1` HDF5 file per model** (`<model>.<target>.h5`); `--legacy-dir` keeps the old directory; optional `eval21-cache/1` via `--cache`; `eval21 validate` | `__HASH__` |
 
 `main` is clean and pushed; no worktrees or uncommitted files remain.
 
@@ -156,6 +157,45 @@ Consequences: `morphology` now has no figure (its numbers remain in `results.jso
 `summary` group is gone. `docs/visualization.md`, the README figure table and the collage cards
 describe the 23-figure set.
 
+## Run files and the inference cache (`eval21-run/1`)
+
+`eval21 run` no longer writes a directory by default. Each model becomes one compressed HDF5
+file, `<out>/<model>.<target>.h5`, schema **`eval21-run/1`**:
+
+```text
+/            attrs: schema, payload_schema, created, producer, eval21_version, model, target
+/manifest    JSON list of every dataset (path, kind, dtype, shape, dims, units)
+/meta/       environment, versions, command, settings
+/dataset/    info (describe()), z_grid
+/samples/    ids, splits, omega_m, params/{names,values}
+/model/      info (adapter.describe()), meta (n_samples, seconds, skipped, metric_meta)
+/metrics/<name>/result     JSON, same payload as results.json
+/metrics/<name>/meta       needs / targets / pointwise
+/metrics/<name>/arrays/*   per-sample arrays, attrs dims / units
+```
+
+- **No cubes** in the run file. `--cache PATH` writes a separate `eval21-cache/1` file with
+  `/truth/<field>` and `/models/<model>/<field>` (`float16`, gzip+shuffle, one file shared by
+  models of one target). `--save-predictions DIR` still writes the legacy `.npz` store; an
+  `.h5` path there is treated as the new cache.
+- **Reader:** `eval21.io.open_run(path)` accepts a run file or a legacy directory and returns
+  `.model`, `.target`, `.settings`, `.dataset_info`, `.n_samples`, `.sample_ids`,
+  `.metric_names()`, `.result()`, `.metric_meta()`, `.arrays()`, `.curves()`, `.as_results()`,
+  `.validate()`. `open_cache(path)` reads the cache; `StoreGroup([...])` merges caches.
+- **Visualization:** `visualization.common.Run` now goes through `open_run`; `find_runs` accepts
+  run files, legacy dirs and trees of either (it checks the root `schema` before opening an
+  `.h5`). `eval21 plot --run FILE` works; `--store` is repeatable and accepts `.h5` caches,
+  legacy stores, or several of either.
+- **CLI:** new `--cache`, `--legacy-dir`, `--overwrite`; `eval21 validate FILE [--strict]`.
+  `--out` may be a directory or a single `<file>.h5` (only with one model).
+- **Arrays** are stored metric-locally (`spectrum_k`, not `spectrum__spectrum_k`); `dims` is
+  best-effort (`sample`, `stage`, `k`, …), `units` is `Mpc^-1`/`mK`/`redshift`/`count`/`s`.
+- **Not implemented yet:** `eval21 convert`, `eval21 export`, a Markdown report or CSV tables
+  from a run file. `--legacy-dir` remains the escape hatch for those.
+- **Tests:** `tests/test_runfile.py` (round trip, legacy adapter, CLI defaults/overwrite, cache,
+  validation, plotting a file); the session fixtures still use `--legacy-dir` so the existing
+  figure tests exercise the legacy reader. Full suite: **136 passed, 7 skipped**.
+
 ## Files added / moved / removed
 
 | path | change |
@@ -166,6 +206,8 @@ describe the 23-figure set.
 | `src/eval21/metrics/front3d.py` | new |
 | `src/eval21/metrics/survey.py` | new |
 | `src/eval21/metrics/{anisotropy,bubble,eft,front,history,observable,parity,spectrum,voxel}.py` | extended `arrays()`; `front` gained per-sample band arrays and `errfrac_all` |
+| `src/eval21/io/` | new: `runfile.py` (`eval21-run/1` writer/reader/validator), `cache.py` (`eval21-cache/1`), `__init__.py` |
+| `tests/test_runfile.py` | new: run-file/cache round trip, legacy adapter, CLI defaults, validation, file plotting |
 | `docs/*.md` | 10 documentation files, plus this handoff (11) |
 | `docs/gen_api.py` | new: regenerates `docs/api.md` |
 | `README.md` | links to the docs, design tree updated, `source` column dropped |
@@ -177,9 +219,9 @@ describe the 23-figure set.
 Entry point [`docs/index.md`](index.md). Contents:
 
 `architecture.md` (control flow, package map, object model), `cli.md` (all commands, flags, TOML),
-`data.md` (Sample/Meta, npz/HDF5/cube caches, `eval21 build`, prediction store), `metrics.md`
+`data.md` (Sample/Meta, npz/HDF5/cube caches, `eval21 build`, inference cache), `metrics.md`
 (all 20 metrics, keys, settings, caveats), `adapters.md` (all specs, draws, fno-21cm contracts),
-`reports.md` (`results.json`, CSVs, `curves.npz`), `visualization.md` (package API, all 23
+`reports.md` (`eval21-run/1`, legacy `results.json`, CSVs, `curves.npz`), `visualization.md` (package API, all 23
 figures, layout conventions, adding figures), `api.md` (generated signatures), `development.md`
 (tests, conventions, extension recipes, release checklist).
 

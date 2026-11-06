@@ -63,10 +63,12 @@ def build_viz_fixture(root: Path, n=4, shape=(32, 32, 64), box=64.0) -> Path:
             main(["run", "--data", str(cubes), "--target", target,
                   "--model", f"{model}=python:{root / 'fixture_models.py'}:{model}",
                   "--out", str(root / "results" / model / target),
-                  "--save-predictions", str(root / "results" / "predictions"), "--save-n", "2", *common])
+                  "--legacy-dir", "--save-predictions", str(root / "results" / "predictions"),
+                  "--save-n", "2", *common])
     main(["run", "--data", str(cubes), "--model", "gen=toygen:1.5", "--draws", "4", "--mode", "generative",
           "--out", str(root / "results_gen" / "gen" / "xhi"),
-          "--save-predictions", str(root / "results_gen" / "predictions"), "--save-n", "2", *common])
+          "--legacy-dir", "--save-predictions", str(root / "results_gen" / "predictions"),
+          "--save-n", "2", *common])
     return root
 
 

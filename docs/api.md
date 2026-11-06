@@ -180,6 +180,9 @@ class ModelResult
 | `arrays` | `dict` | `field(default_factory=dict)` |
 | `seconds` | `float` | `0.0` |
 | `n_samples` | `int` | `0` |
+| `samples` | `list` | `field(default_factory=list)` |
+| `z_grid` | `object` | `None` |
+| `metric_meta` | `dict` | `field(default_factory=dict)` |
 
 ```python
 def evaluate(adapter, dataset, settings: Settings, metric_names: Iterable[str]=('all',), metric_options: dict | None=None, progress=None, expect_shape: tuple[int, ...] | None=None, store=None, model_name: str='model') -> ModelResult
@@ -253,6 +256,153 @@ Writer (during a run) and reader (for figures) of stored cubes.
 | `truth(sample_id)` | {"targets": {...}, "inputs": {...}, "z_grid", "box_mpc", "omega_m", "params"} as float32. |
 | `prediction(model: str, sample_id)` |  |
 | `has(model: str, sample_id)` |  |
+
+## `eval21.io`
+
+Storage for evaluation results: ``eval21-run/1`` files and ``eval21-cache/1`` cubes.
+
+_No public names._
+
+## `eval21.io.runfile`
+
+The eval21 run file: one HDF5 file per ``(model, target, dataset)`` evaluation.
+
+```python
+def array_metadata(metric: str, key: str, shape: tuple, n_samples: int) -> tuple[list, str]
+```
+
+Best-effort ``(dims, units)`` for one exported array.
+
+```python
+def default_path(out: Path, model: str, target: str) -> Path
+```
+
+```python
+def write_run(path, result, dataset_info: dict, settings: dict, environment: dict | None=None, command: str='', overwrite: bool=False) -> Path
+```
+
+Write one :class:`~eval21.runner.ModelResult` as an ``eval21-run/1`` file.
+
+```python
+class RunFile(path)
+```
+
+Reader for one ``eval21-run/1`` file.
+
+| method | description |
+|---|---|
+| `model` | property:  |
+| `target` | property:  |
+| `dataset_info` | property:  |
+| `settings` | property:  |
+| `info` | property:  |
+| `meta` | property:  |
+| `n_samples` | property:  |
+| `sample_ids` | property:  |
+| `metric_names()` |  |
+| `result(metric: str)` |  |
+| `metric_meta(metric: str)` |  |
+| `arrays(metric: str)` |  |
+| `array(metric: str, key: str)` |  |
+| `curves()` | ``{model: {array key: array}}`` — the same shape the legacy reader returns. |
+| `as_results()` |  |
+| `validate(strict: bool=False)` |  |
+| `close()` |  |
+
+```python
+class LegacyRun(path)
+```
+
+Adapter over a legacy run directory (``results.json`` + ``curves.npz``).
+
+| method | description |
+|---|---|
+| `model` | property:  |
+| `target` | property:  |
+| `dataset_info` | property:  |
+| `settings` | property:  |
+| `info` | property:  |
+| `n_samples` | property:  |
+| `sample_ids` | property:  |
+| `metric_names()` |  |
+| `result(metric)` |  |
+| `metric_meta(metric)` |  |
+| `arrays(metric)` |  |
+| `array(metric, key)` |  |
+| `curves()` |  |
+| `as_results()` |  |
+| `validate(strict=False)` |  |
+| `close()` |  |
+
+```python
+def open_run(path)
+```
+
+Open an ``eval21-run/1`` file or a legacy run directory with one interface.
+
+```python
+def validate_run(path, strict: bool=False) -> list[str]
+```
+
+## `eval21.io.cache`
+
+Optional HDF5 inference cache (``eval21-cache/1``).
+
+```python
+class CacheWriter(path, ids=None, n: int=DEFAULT_MAX_SAMPLES, dtype=np.float16, overwrite: bool=False)
+```
+
+Append truth and predictions to one cache file, model group by model group.
+
+| method | description |
+|---|---|
+| `wants(sample)` |  |
+| `save_truth(sample)` |  |
+| `save_prediction(model: str, sample, prediction: dict, draws: int=1)` |  |
+| `flush()` |  |
+| `close()` |  |
+| `dir` | property:  |
+
+```python
+class CacheFile(path)
+```
+
+Reader for one ``eval21-cache/1`` file.
+
+| method | description |
+|---|---|
+| `dir` | property:  |
+| `draws(model: str)` |  |
+| `resolve(key)` | Accept a sample id (int/str) or a 0-based index. |
+| `has(model, sid: str \| None=None)` | ``has(sid)`` or ``has(model, sid)`` (the legacy store's signature). |
+| `truth(sid: str)` |  |
+| `prediction(model: str, sid: str)` |  |
+| `close()` |  |
+
+```python
+def resolve_sample(samples: list[str], key) -> str
+```
+
+```python
+def open_cache(path) -> CacheFile
+```
+
+```python
+class StoreGroup(stores)
+```
+
+Read several caches (or legacy stores) as one store.
+
+| method | description |
+|---|---|
+| `dir` | property:  |
+| `models` | property:  |
+| `samples` | property:  |
+| `draws(model: str)` |  |
+| `resolve(key)` |  |
+| `has(model, sid: str \| None=None)` | ``has(sid)`` or ``has(model, sid)``, matching the other stores. |
+| `truth(sid: str)` |  |
+| `prediction(model: str, sid: str)` |  |
 
 ## `eval21.physics`
 
@@ -930,6 +1080,8 @@ def field_name(field: str) -> str
 ```python
 class Run(path: Path)
 ```
+
+One run file (``eval21-run/1``) or legacy result directory, read through one interface.
 
 | method | description |
 |---|---|

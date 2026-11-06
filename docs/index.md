@@ -62,8 +62,9 @@ eval21 run --data cubes/ \
 eval21 plot all --run results/ --out figs/
 ```
 
-A run writes `results.json`, `summary.csv`, `stages.csv`, `report.md` and `curves.npz` to
-`--out`. `eval21 plot` reads those files back; it never re-runs a model.
+A run writes one `eval21-run/1` HDF5 file per model to `--out` (`results/fno.xhi.h5`), or the
+legacy five-file directory with `--legacy-dir`. `eval21 plot` reads either back; it never
+re-runs a model. Cubes for map figures go to an optional `--cache` file.
 
 ## Documentation map
 
@@ -71,15 +72,15 @@ A run writes `results.json`, `summary.csv`, `stages.csv`, `report.md` and `curve
 |---|---|
 | [Architecture](architecture.md) | design principles, control flow, package map, object model, extension points |
 | [Command line](cli.md) | every subcommand and option, TOML configuration, selection rules |
-| [Data](data.md) | `Sample`/`Meta` contract, dataset formats, `eval21 build`, cube-cache layout, prediction store |
+| [Data](data.md) | `Sample`/`Meta` contract, dataset formats, `eval21 build`, cube-cache layout, inference cache |
 | [Metrics](metrics.md) | stage binning, every metric's definition and result keys, settings, caveats |
 | [Model adapters](adapters.md) | adapter protocol, `python:`/`torch:`/`command:`/`fno21cm:` specs, draws, cache contracts |
-| [Reports](reports.md) | `results.json` schema, CSV/NPZ layouts, the Markdown report |
+| [Reports](reports.md) | run-file layout and reader, legacy directory, metrics payload, comparison |
 | [Visualization](visualization.md) | the `eval21.visualization` package, figure registry, all 23 figures, layout conventions |
 | [API reference](api.md) | public functions and classes by module, with signatures |
 | [Development](development.md) | test suite and fixture, conventions, adding metrics/figures/datasets |
 | [Agent handoff](agent-handoff.md) | changelog of the visualization reorganisation, merges and new metrics, with migration notes |
-| [Run file format](design/run-file.md) | design spec: `eval21-run/1` HDF5 files and the optional `eval21-cache/1` inference cache |
+| [Run file format](design/run-file.md) | `eval21-run/1` and `eval21-cache/1`: design, v1 deviations, validation, migration |
 
 ## The two contracts
 

@@ -49,7 +49,7 @@ eval21 run \
     --model fno=fno21cm:/work/fno-21cm/checkpoints/3d_xhi/fno/ckpt/best_model_state_dict.pt \
     --fno-root /work/fno-21cm \
     --expect-shape 140,140,256 \
-    --limit 200 --out results/fno
+    --limit 200 --out results/fno.xhi.h5
 
 # 3. Compare several models in one pass over the data
 eval21 run --data cubes/ \
@@ -60,15 +60,26 @@ eval21 run --data cubes/ \
     --out results/compare
 ```
 
-`results/` then contains:
+Each model is written as one compressed HDF5 file, schema `eval21-run/1`:
 
-| file | content |
-|---|---|
-| `results.json` | complete report, schema `eval21/1`, all nested metrics |
-| `summary.csv` | every top-level scalar leaf as one column, one row per model |
-| `stages.csv` | long-form stage/chunk table: model, metric, group, stage, key, value |
-| `report.md` | headline table plus per-stage tables |
-| `curves.npz` | spectra, PDFs, profiles, per-sample records |
+```text
+results/
+├── fno.xhi.h5
+└── ufno.xhi.h5
+```
+
+The file holds the metric results, per-sample arrays, dataset description and settings. Cubes
+are **not** included; add `--cache results/fno.xhi.cache.h5` when map figures need them.
+
+```python
+from eval21.io import open_run
+run = open_run("results/fno.xhi.h5")
+run.result("voxel")["rmse"]
+run.curves()["fno"]["spectrum_k"]
+```
+
+`--legacy-dir` still writes the old five-file directory (`results.json`, `summary.csv`,
+`stages.csv`, `report.md`, `curves.npz`) for tools that have not moved yet.
 
 ## The data contract
 
@@ -260,7 +271,7 @@ bubble-size PDFs, histories, PDFs, morphology counts, EFT and the summary-statis
 
 ```bash
 eval21 run --data cubes.h5 --model gen=python:my_generator.py --draws 16 --mode generative \
-    --out results/gen --save-predictions results/predictions
+    --out results/gen --cache results/gen/xhi.cache.h5
 ```
 
 ## Metrics
@@ -327,9 +338,9 @@ truth and prediction are always paired. `active` is the last row: slices with
 The full catalogue — every figure with its group, inputs, output files and options — is in
 [`docs/visualization.md`](docs/visualization.md).
 
-`eval21 plot` (needs `matplotlib`, `pip install -e ".[viz]"`) draws figures from one or more
-result directories. A directory without `results.json` is searched recursively, so a tree of runs
-(`<model>/<group>/<target>/`) can be passed whole. Runs of the same target on different data are
+`eval21 plot` (needs `matplotlib`, `pip install -e ".[viz]"`) draws figures from run files or
+legacy result directories. A directory is searched recursively for `results.json` and
+`eval21-run/1` `*.h5` files, so a tree of runs (`<model>/<group>/<target>/`) can be passed whole. Runs of the same target on different data are
 pooled as groups (e.g. redshift windows with one manifest each); a model must exist in every
 group. An x_HI and a T_b run of the same samples combine in the gallery.
 
@@ -341,8 +352,9 @@ eval21 plot spectra maps --run results/ --out figs/ --opt vmax=0.3      # groups
 
 Every figure is a function registered with `@figure(name, group=..., needs=...)` in
 `eval21/visualization/` (a new figure is one decorated function). Figures marked *store* draw cube slices
-and need the prediction store written by `eval21 run --save-predictions DIR` (x_HI and T_b runs
-may share one DIR; `plot` finds `predictions/` next to the results or takes `--store`); without
+and need cubes from `eval21 run --cache PATH` (or the legacy `--save-predictions DIR`; x_HI and
+T_b runs may share a cache/store; `plot` finds `*.cache.h5` / `predictions/` next to the runs or
+takes `--store`); without
 it they are skipped with that reason, as is any figure whose metric was not run. All figures are
 written as PNG and PDF. The fno-21cm and rhizome evaluation figures are ported with their
 original layout, colour maps and limits; figures of model internals (spectral weights,
@@ -514,7 +526,7 @@ docs/                 # architecture, CLI, data, metrics, adapters, reports, fig
 ## Tests
 
 ```bash
-python -m pytest          # ~130 tests, a few minutes (figure tests build a small synthetic fixture), no data and no GPU
+python -m pytest          # ~140 tests, a few minutes (figure tests build a small synthetic fixture), no data and no GPU
 eval21 selftest         # same analytic checks, no pytest
 
 # Optional: pin the physics primitives to the fno-21cm reference code
