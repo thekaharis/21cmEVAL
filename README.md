@@ -509,19 +509,6 @@ docs/                 # architecture, CLI, data, metrics, adapters, reports, fig
 * **Numpy core.** `import eval21` does not import torch. Torch appears only
   inside the torch and fno-21cm adapters.
 
-## What this suite does not do
-
-* Train or fine-tune models, or convert checkpoints between architectures.
-* Plot model internals (spectral weights, gates, training curves): `eval21 plot`
-  draws evaluation figures only.
-* Evaluate the LOS resampling grid itself (`viz/los_grid_evaluation.py`); that
-  is a dataset diagnostic, not a model score.
-* Score several output fields in one pass. Multifield runs (x_HI, δT_b,
-  velocity) must be evaluated one `--target` at a time; the physics metrics
-  (`history`, `observable`, `eft`, `front`) are x_HI-specific and will be
-  skipped or meaningless for other targets.
-* Know your units. Density must be the evolved field with mean 1 and the box
-  size must be the transverse comoving size in Mpc; everything else follows.
 
 ## Tests
 
